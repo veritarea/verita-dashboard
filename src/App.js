@@ -458,11 +458,13 @@ function Dashboard({ user, onLogout, onAdmin }) {
               const src=SOURCES[lead.source]||{label:lead.source,color:"#555"};
               const st=STATUS_CONFIG[lead.status]||STATUS_CONFIG.new;
               const active=selected?.id===lead.id;
+              const isNew = lead.collected_at?.startsWith(today);
               return (
                 <div key={lead.id} onClick={()=>{setSelected(lead);setNote(lead.note||"");}}
-                  style={{ background:active?"#1c2128":"#161b22", border:`1px solid ${active?"#388bfd44":"#21262d"}`, borderRadius:7, padding:"10px 12px", marginBottom:4, cursor:"pointer", transition:"background 0.12s", animation:`fadeIn 0.18s ease ${Math.min(i,20)*0.02}s both` }}>
+                  style={{ background:active?"#1c2128":"#161b22", border:`1px solid ${isNew&&!active?"#f48c0644":active?"#388bfd44":"#21262d"}`, borderRadius:7, padding:"10px 12px", marginBottom:4, cursor:"pointer", transition:"background 0.12s", animation:`fadeIn 0.18s ease ${Math.min(i,20)*0.02}s both` }}>
                   <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:6 }}>
                     <span style={{ background:src.color, color:"#fff", fontSize:9, fontWeight:700, padding:"2px 6px", borderRadius:3, whiteSpace:"nowrap", flexShrink:0 }}>{src.label}</span>
+                    {isNew && <span style={{ background:"#f48c06", color:"#fff", fontSize:9, fontWeight:800, padding:"2px 6px", borderRadius:3, whiteSpace:"nowrap", flexShrink:0, letterSpacing:"0.5px" }}>NEW</span>}
                     <span style={{ fontSize:12, fontWeight:600, color:"#e6edf3", flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{lead.title}</span>
                     <span style={{ background:st.bg, color:st.color, fontSize:10, fontWeight:600, padding:"2px 7px", borderRadius:10, whiteSpace:"nowrap", flexShrink:0 }}>{st.label}</span>
                     <span style={{ fontSize:10, color:"#6e7681", whiteSpace:"nowrap", flexShrink:0 }}>{timeAgo(lead.collected_at)}</span>
