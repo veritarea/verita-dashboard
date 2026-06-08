@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 
 const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
 const SUPABASE_ANON = process.env.REACT_APP_SUPABASE_ANON;
+const ADMIN_EMAIL = process.env.REACT_APP_ADMIN_EMAIL; // 관리자 이메일
 
 const SOURCES = {
   gyocharo:    { label: "교차로",    color: "#e85d04" },
@@ -22,27 +23,44 @@ const STATUS_CONFIG = {
 
 async function sbFetch(path, opts = {}, token = null) {
   const url = `${SUPABASE_URL}/rest/v1/${path}`;
-  const headers = {
-    "apikey": SUPABASE_ANON,
-    "Authorization": `Bearer ${token || SUPABASE_ANON}`,
-    "Content-Type": "application/json",
-    "Prefer": opts.method === "PATCH" ? "return=minimal" : "return=representation",
-  };
-  const res = await fetch(url, { method: opts.method || "GET", headers, body: opts.body });
+  const res = await fetch(url, {
+    method: opts.method || "GET",
+    headers: {
+      "apikey": SUPABASE_ANON,
+      "Authorization": `Bearer ${token || SUPABASE_ANON}`,
+      "Content-Type": "application/json",
+      "Prefer": opts.method === "PATCH" || opts.method === "DELETE" ? "return=minimal" : "return=representation",
+    },
+    body: opts.body,
+  });
   if (!res.ok) throw new Error(await res.text());
   const t = await res.text();
   return t ? JSON.parse(t) : [];
 }
 
 async function sbAuth(action, email, password) {
-  const url = `${SUPABASE_URL}/auth/v1/${action}`;
-  const res = await fetch(url, {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/${action}`, {
     method: "POST",
     headers: { "apikey": SUPABASE_ANON, "Content-Type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error_description || data.msg || "인증 오류");
+  return data;
+}
+
+async function sbAdminCreateUser(email, password, token) {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
+    method: "POST",
+    headers: {
+      "apikey": SUPABASE_ANON,
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ email, password, email_confirm: true }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.msg || "계정 생성 실패");
   return data;
 }
 
@@ -60,31 +78,15 @@ function LoginPage({ onLogin }) {
   const [password, setPassword] = useState("");
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState("");
-  const [mode, setMode]         = useState("login"); // login | signup
 
-  async function handleSubmit() {
+  async function handleLogin() {
     if (!email || !password) return;
     setLoading(true); setError("");
     try {
-      if (mode === "signup") {
-        // 허용된 이메일인지 먼저 확인
-        const allowed = await sbFetch(`allowed_users?email=eq.${encodeURIComponent(email)}&select=email`);
-        if (!allowed || allowed.length === 0) {
-          throw new Error("승인되지 않은 이메일입니다. 관리자에게 문의하세요.");
-        }
-        await sbAuth("signup", email, password);
-        setError(""); 
-        alert("회원가입 완료! 이메일 인증 후 로그인하세요.");
-        setMode("login");
-      } else {
-        const data = await sbAuth("token?grant_type=password", email, password);
-        // 허용된 이메일인지 확인
-        const allowed = await sbFetch(`allowed_users?email=eq.${encodeURIComponent(email)}&select=email`);
-        if (!allowed || allowed.length === 0) {
-          throw new Error("접근 권한이 없습니다.");
-        }
-        onLogin({ token: data.access_token, email, name: email.split("@")[0] });
-      }
+      const data = await sbAuth("token?grant_type=password", email, password);
+      const allowed = await sbFetch(`allowed_users?email=eq.${encodeURIComponent(email)}&select=email,name`);
+      if (!allowed || allowed.length === 0) throw new Error("접근 권한이 없습니다. 관리자에게 문의하세요.");
+      onLogin({ token: data.access_token, email, name: allowed[0].name || email.split("@")[0], isAdmin: email === ADMIN_EMAIL });
     } catch(e) {
       setError(e.message);
     } finally {
@@ -96,7 +98,6 @@ function LoginPage({ onLogin }) {
     <div style={{ fontFamily:"'Noto Sans KR',sans-serif", background:"#0d1117", minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center" }}>
       <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet"/>
       <div style={{ width:360, background:"#161b22", border:"1px solid #21262d", borderRadius:12, padding:32 }}>
-        {/* 로고 */}
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:28 }}>
           <div style={{ width:36, height:36, background:"linear-gradient(135deg,#e85d04,#f48c06)", borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, fontWeight:700, color:"#fff" }}>V</div>
           <div>
@@ -104,50 +105,155 @@ function LoginPage({ onLogin }) {
             <div style={{ fontSize:11, color:"#6e7681" }}>매물 수집 시스템</div>
           </div>
         </div>
-
-        {/* 탭 */}
-        <div style={{ display:"flex", marginBottom:24, background:"#0d1117", borderRadius:8, padding:3 }}>
-          {[["login","로그인"],["signup","회원가입"]].map(([key,label])=>(
-            <button key={key} onClick={()=>{ setMode(key); setError(""); }}
-              style={{ flex:1, padding:"7px 0", borderRadius:6, border:"none", background:mode===key?"#21262d":"transparent", color:mode===key?"#e6edf3":"#6e7681", fontSize:13, fontWeight:mode===key?600:400, cursor:"pointer" }}>
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {/* 폼 */}
         <div style={{ marginBottom:14 }}>
           <div style={{ fontSize:12, color:"#8b949e", marginBottom:6 }}>이메일</div>
-          <input value={email} onChange={e=>setEmail(e.target.value)}
-            placeholder="이메일 입력"
+          <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="이메일 입력"
             style={{ width:"100%", boxSizing:"border-box", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"9px 12px", color:"#e6edf3", fontSize:13, outline:"none" }}
           />
         </div>
         <div style={{ marginBottom:20 }}>
           <div style={{ fontSize:12, color:"#8b949e", marginBottom:6 }}>비밀번호</div>
-          <input value={password} onChange={e=>setPassword(e.target.value)}
-            type="password" placeholder="비밀번호 입력"
-            onKeyDown={e=>e.key==="Enter"&&handleSubmit()}
+          <input value={password} onChange={e=>setPassword(e.target.value)} type="password" placeholder="비밀번호 입력"
+            onKeyDown={e=>e.key==="Enter"&&handleLogin()}
             style={{ width:"100%", boxSizing:"border-box", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"9px 12px", color:"#e6edf3", fontSize:13, outline:"none" }}
           />
         </div>
-
-        {error && (
-          <div style={{ background:"#2d0f0f", border:"1px solid #7f1d1d", borderRadius:6, padding:"8px 12px", fontSize:12, color:"#fca5a5", marginBottom:14 }}>
-            {error}
-          </div>
-        )}
-
-        <button onClick={handleSubmit} disabled={loading}
+        {error && <div style={{ background:"#2d0f0f", border:"1px solid #7f1d1d", borderRadius:6, padding:"8px 12px", fontSize:12, color:"#fca5a5", marginBottom:14 }}>{error}</div>}
+        <button onClick={handleLogin} disabled={loading}
           style={{ width:"100%", background:loading?"#21262d":"linear-gradient(135deg,#e85d04,#f48c06)", color:"#fff", border:"none", borderRadius:7, padding:"11px 0", fontSize:14, fontWeight:700, cursor:loading?"not-allowed":"pointer" }}>
-          {loading ? "처리 중..." : mode==="login" ? "로그인" : "회원가입"}
+          {loading ? "로그인 중..." : "로그인"}
         </button>
+        <div style={{ marginTop:14, fontSize:11, color:"#6e7681", textAlign:"center" }}>계정이 없으면 관리자에게 문의하세요</div>
+      </div>
+    </div>
+  );
+}
 
-        {mode==="signup" && (
-          <div style={{ marginTop:14, fontSize:11, color:"#6e7681", textAlign:"center", lineHeight:1.6 }}>
-            관리자가 허용한 이메일만 가입 가능합니다
+// ── 관리자 페이지 ──
+function AdminPage({ user, onBack }) {
+  const [users, setUsers]         = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [newEmail, setNewEmail]   = useState("");
+  const [newName, setNewName]     = useState("");
+  const [newPw, setNewPw]         = useState("");
+  const [creating, setCreating]   = useState(false);
+  const [error, setError]         = useState("");
+  const [success, setSuccess]     = useState("");
+
+  useEffect(() => { loadUsers(); }, []);
+
+  async function loadUsers() {
+    setLoading(true);
+    try {
+      const data = await sbFetch("allowed_users?select=*&order=created_at.desc", {}, user.token);
+      setUsers(data);
+    } catch(e) { setError(e.message); }
+    finally { setLoading(false); }
+  }
+
+  async function createUser() {
+    if (!newEmail || !newPw || !newName) { setError("이름, 이메일, 비밀번호 모두 입력하세요"); return; }
+    setCreating(true); setError(""); setSuccess("");
+    try {
+      // 1. allowed_users에 추가
+      await sbFetch("allowed_users", { method:"POST", body:JSON.stringify({ email:newEmail, name:newName }) }, user.token);
+      // 2. Supabase Auth에 계정 생성 시도 (실패해도 allowed_users는 추가됨)
+      try {
+        await sbAdminCreateUser(newEmail, newPw, user.token);
+      } catch(e) {
+        // admin API 권한 없으면 일반 signup으로 fallback
+        await sbAuth("signup", newEmail, newPw);
+      }
+      setSuccess(`✅ ${newName} (${newEmail}) 계정 생성 완료! 비밀번호: ${newPw}`);
+      setNewEmail(""); setNewName(""); setNewPw("");
+      loadUsers();
+    } catch(e) {
+      setError(e.message);
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function deleteUser(email) {
+    if (!window.confirm(`${email} 계정을 삭제할까요?`)) return;
+    try {
+      await sbFetch(`allowed_users?email=eq.${encodeURIComponent(email)}`, { method:"DELETE" }, user.token);
+      loadUsers();
+    } catch(e) { setError(e.message); }
+  }
+
+  return (
+    <div style={{ fontFamily:"'Noto Sans KR',sans-serif", background:"#0d1117", minHeight:"100vh", color:"#e6edf3" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet"/>
+      <div style={{ background:"#161b22", borderBottom:"1px solid #21262d", padding:"0 24px", display:"flex", alignItems:"center", justifyContent:"space-between", height:52 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+          <button onClick={onBack} style={{ background:"none", border:"1px solid #30363d", color:"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer" }}>← 돌아가기</button>
+          <span style={{ fontWeight:700, fontSize:14 }}>관리자 페이지</span>
+        </div>
+        <span style={{ fontSize:12, color:"#6e7681" }}>👤 {user.name}</span>
+      </div>
+
+      <div style={{ maxWidth:600, margin:"40px auto", padding:"0 20px" }}>
+        {/* 계정 생성 */}
+        <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:24, marginBottom:24 }}>
+          <div style={{ fontWeight:700, fontSize:15, marginBottom:18 }}>새 계정 생성</div>
+
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12 }}>
+            <div>
+              <div style={{ fontSize:11, color:"#6e7681", marginBottom:6 }}>이름</div>
+              <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="홍길동"
+                style={{ width:"100%", boxSizing:"border-box", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:"#e6edf3", fontSize:12, outline:"none" }}
+              />
+            </div>
+            <div>
+              <div style={{ fontSize:11, color:"#6e7681", marginBottom:6 }}>이메일</div>
+              <input value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="email@gmail.com"
+                style={{ width:"100%", boxSizing:"border-box", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:"#e6edf3", fontSize:12, outline:"none" }}
+              />
+            </div>
           </div>
-        )}
+
+          <div style={{ marginBottom:16 }}>
+            <div style={{ fontSize:11, color:"#6e7681", marginBottom:6 }}>임시 비밀번호</div>
+            <input value={newPw} onChange={e=>setNewPw(e.target.value)} placeholder="임시 비밀번호 (6자 이상)"
+              style={{ width:"100%", boxSizing:"border-box", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:"#e6edf3", fontSize:12, outline:"none" }}
+            />
+          </div>
+
+          {error && <div style={{ background:"#2d0f0f", border:"1px solid #7f1d1d", borderRadius:6, padding:"8px 12px", fontSize:12, color:"#fca5a5", marginBottom:12 }}>{error}</div>}
+          {success && <div style={{ background:"#052e16", border:"1px solid #16a34a", borderRadius:6, padding:"10px 12px", fontSize:12, color:"#86efac", marginBottom:12, lineHeight:1.6 }}>{success}</div>}
+
+          <button onClick={createUser} disabled={creating}
+            style={{ background:creating?"#21262d":"linear-gradient(135deg,#e85d04,#f48c06)", color:"#fff", border:"none", borderRadius:7, padding:"10px 20px", fontSize:13, fontWeight:700, cursor:creating?"not-allowed":"pointer" }}>
+            {creating ? "생성 중..." : "계정 생성"}
+          </button>
+        </div>
+
+        {/* 사용자 목록 */}
+        <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:24 }}>
+          <div style={{ fontWeight:700, fontSize:15, marginBottom:18 }}>허용된 사용자 ({users.length}명)</div>
+          {loading ? (
+            <div style={{ color:"#6e7681", fontSize:13 }}>로딩 중...</div>
+          ) : (
+            users.map(u => (
+              <div key={u.email} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 12px", background:"#0d1117", borderRadius:7, marginBottom:6 }}>
+                <div>
+                  <div style={{ fontSize:13, fontWeight:600, color:"#e6edf3" }}>{u.name}</div>
+                  <div style={{ fontSize:11, color:"#6e7681", marginTop:2 }}>{u.email}</div>
+                </div>
+                <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                  {u.email === ADMIN_EMAIL && <span style={{ fontSize:10, color:"#f48c06", background:"#2d1f00", padding:"2px 8px", borderRadius:10 }}>관리자</span>}
+                  {u.email !== ADMIN_EMAIL && (
+                    <button onClick={()=>deleteUser(u.email)}
+                      style={{ background:"none", border:"1px solid #7f1d1d", color:"#fca5a5", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer" }}>
+                      삭제
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
     </div>
   );
@@ -215,7 +321,7 @@ function DetailPanel({ lead, note, setNote, onClose, onStatus, onSave, saving })
 }
 
 // ── 메인 대시보드 ──
-function Dashboard({ user, onLogout }) {
+function Dashboard({ user, onLogout, onAdmin }) {
   const [leads, setLeads]         = useState([]);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState(null);
@@ -277,16 +383,20 @@ function Dashboard({ user, onLogout }) {
       <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet"/>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}} *::-webkit-scrollbar{width:4px} *::-webkit-scrollbar-track{background:#0d1117} *::-webkit-scrollbar-thumb{background:#30363d;border-radius:2px}`}</style>
 
-      {/* 헤더 */}
       <div style={{ background:"#161b22", borderBottom:"1px solid #21262d", padding:"0 20px", display:"flex", alignItems:"center", justifyContent:"space-between", height:52 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <div style={{ width:26, height:26, background:"linear-gradient(135deg,#e85d04,#f48c06)", borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700 }}>V</div>
           <span style={{ fontWeight:700, fontSize:14 }}>Verita 매물 수집</span>
           <span style={{ fontSize:10, color:"#22c55e", background:"#052e16", padding:"2px 8px", borderRadius:10, border:"1px solid #16a34a" }}>● Live</span>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           {lastRefresh && <span style={{ fontSize:11, color:"#6e7681" }}>갱신 {lastRefresh.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}</span>}
           <span style={{ fontSize:12, color:"#8b949e" }}>👤 {user.name}</span>
+          {user.isAdmin && (
+            <button onClick={onAdmin} style={{ background:"#21262d", border:"1px solid #30363d", color:"#f48c06", borderRadius:6, padding:"6px 12px", fontSize:12, cursor:"pointer", fontWeight:600 }}>
+              ⚙️ 관리자
+            </button>
+          )}
           <button onClick={loadLeads} disabled={loading} style={{ background:loading?"#21262d":"linear-gradient(135deg,#e85d04,#f48c06)", color:"#fff", border:"none", borderRadius:6, padding:"6px 13px", fontSize:12, fontWeight:600, cursor:loading?"not-allowed":"pointer", display:"flex", alignItems:"center", gap:5 }}>
             <span style={{ display:"inline-block", animation:loading?"spin 1s linear infinite":"none" }}>⟳</span>
             {loading?"로딩 중...":"새로고침"}
@@ -298,7 +408,6 @@ function Dashboard({ user, onLogout }) {
       {error && <div style={{ background:"#2d0f0f", borderBottom:"1px solid #7f1d1d", padding:"8px 20px", fontSize:12, color:"#fca5a5" }}>⚠️ {error}</div>}
 
       <div style={{ display:"flex", height:"calc(100vh - 52px)" }}>
-        {/* 사이드바 */}
         <div style={{ width:148, background:"#161b22", borderRight:"1px solid #21262d", padding:"14px 0", flexShrink:0, overflowY:"auto" }}>
           <div style={{ padding:"0 12px 8px", fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px" }}>상태</div>
           {[["all","전체",leads.length],...Object.entries(STATUS_CONFIG).map(([k,v])=>[k,v.label,counts[k]])].map(([key,label,count])=>(
@@ -323,7 +432,6 @@ function Dashboard({ user, onLogout }) {
           </div>
         </div>
 
-        {/* 리스트 */}
         <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
           <div style={{ padding:"10px 12px", borderBottom:"1px solid #21262d", background:"#161b22" }}>
             <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="주소 · 연락처 · 제목 검색..."
@@ -357,7 +465,6 @@ function Dashboard({ user, onLogout }) {
             })}
           </div>
         </div>
-
         {selected&&<DetailPanel lead={selected} note={note} setNote={setNote} onClose={()=>setSelected(null)} onStatus={updateStatus} onSave={saveNote} saving={saving}/>}
       </div>
     </div>
@@ -366,10 +473,8 @@ function Dashboard({ user, onLogout }) {
 
 // ── 앱 루트 ──
 export default function App() {
-  const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem("verita_user");
-    return saved ? JSON.parse(saved) : null;
-  });
+  const [user, setUser]     = useState(() => { try { return JSON.parse(localStorage.getItem("verita_user")); } catch { return null; } });
+  const [page, setPage]     = useState("dashboard");
 
   function handleLogin(userData) {
     localStorage.setItem("verita_user", JSON.stringify(userData));
@@ -378,9 +483,10 @@ export default function App() {
 
   function handleLogout() {
     localStorage.removeItem("verita_user");
-    setUser(null);
+    setUser(null); setPage("dashboard");
   }
 
   if (!user) return <LoginPage onLogin={handleLogin} />;
-  return <Dashboard user={user} onLogout={handleLogout} />;
+  if (page === "admin" && user.isAdmin) return <AdminPage user={user} onBack={()=>setPage("dashboard")} />;
+  return <Dashboard user={user} onLogout={handleLogout} onAdmin={()=>setPage("admin")} />;
 }
