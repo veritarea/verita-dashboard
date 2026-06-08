@@ -348,16 +348,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
 
   const today = new Date().toISOString().slice(0,10);
 
-  // 수집된 데이터에서 지역 목록 동적 추출
-  const areaList = [...new Set(
-    leads
-      .map(l => {
-        const addr = l.address_jibun || l.address_raw || "";
-        const m = addr.match(/제주시\s+([가-힣]+(?:읍|면|동|리))/);
-        return m ? m[1] : null;
-      })
-      .filter(Boolean)
-  )].sort();
+  const AREAS = [["제주시", "제주시"], ["서귀포시", "서귀포시"]];
 
   const filtered = leads.filter(l => {
     if (filter !== "all" && l.status !== filter) return false;
@@ -449,13 +440,10 @@ function Dashboard({ user, onLogout, onAdmin }) {
           </div>
           <div style={{ margin:"12px 12px 8px", height:1, background:"#21262d" }}/>
           <div style={{ padding:"0 12px 8px", fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px" }}>지역</div>
-          <button onClick={()=>setAreaFilter("all")} style={{ width:"100%", textAlign:"left", padding:"6px 12px", background:areaFilter==="all"?"#21262d":"transparent", border:"none", color:areaFilter==="all"?"#e6edf3":"#8b949e", fontSize:12, cursor:"pointer" }}>
-            전체
-          </button>
-          {areaList.map(area=>(
-            <button key={area} onClick={()=>setAreaFilter(area)}
-              style={{ width:"100%", textAlign:"left", padding:"6px 12px", background:areaFilter===area?"#21262d":"transparent", border:"none", color:areaFilter===area?"#e6edf3":"#8b949e", fontSize:12, cursor:"pointer", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-              {area}
+          {[["all","전체"],["제주시","제주시"],["서귀포시","서귀포시"]].map(([key,label])=>(
+            <button key={key} onClick={()=>setAreaFilter(key)}
+              style={{ width:"100%", textAlign:"left", padding:"6px 12px", background:areaFilter===key?"#21262d":"transparent", border:"none", color:areaFilter===key?"#e6edf3":"#8b949e", fontSize:12, cursor:"pointer" }}>
+              {label}
             </button>
           ))}
         </div>
