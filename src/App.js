@@ -20,21 +20,30 @@ const STATUS_CONFIG = {
   duplicate: { label: "중복",    color: "#9ca3af", bg: "#111" },
 };
 
-async function sbFetch(path, opts = {}) {
+async function sbFetch(path, opts = {}, token = null) {
   const url = `${SUPABASE_URL}/rest/v1/${path}`;
-  const res = await fetch(url, {
-    method: opts.method || "GET",
-    headers: {
-      "apikey": SUPABASE_ANON,
-      "Authorization": `Bearer ${SUPABASE_ANON}`,
-      "Content-Type": "application/json",
-      "Prefer": opts.method === "PATCH" ? "return=minimal" : "return=representation",
-    },
-    body: opts.body || undefined,
-  });
+  const headers = {
+    "apikey": SUPABASE_ANON,
+    "Authorization": `Bearer ${token || SUPABASE_ANON}`,
+    "Content-Type": "application/json",
+    "Prefer": opts.method === "PATCH" ? "return=minimal" : "return=representation",
+  };
+  const res = await fetch(url, { method: opts.method || "GET", headers, body: opts.body });
   if (!res.ok) throw new Error(await res.text());
   const t = await res.text();
   return t ? JSON.parse(t) : [];
+}
+
+async function sbAuth(action, email, password) {
+  const url = `${SUPABASE_URL}/auth/v1/${action}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "apikey": SUPABASE_ANON, "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error_description || data.msg || "인증 오류");
+  return data;
 }
 
 function timeAgo(d) {
@@ -45,6 +54,106 @@ function timeAgo(d) {
   return `${Math.floor(s/86400)}일 전`;
 }
 
+// ── 로그인 화면 ──
+function LoginPage({ onLogin }) {
+  const [email, setEmail]       = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState("");
+  const [mode, setMode]         = useState("login"); // login | signup
+
+  async function handleSubmit() {
+    if (!email || !password) return;
+    setLoading(true); setError("");
+    try {
+      if (mode === "signup") {
+        // 허용된 이메일인지 먼저 확인
+        const allowed = await sbFetch(`allowed_users?email=eq.${encodeURIComponent(email)}&select=email`);
+        if (!allowed || allowed.length === 0) {
+          throw new Error("승인되지 않은 이메일입니다. 관리자에게 문의하세요.");
+        }
+        await sbAuth("signup", email, password);
+        setError(""); 
+        alert("회원가입 완료! 이메일 인증 후 로그인하세요.");
+        setMode("login");
+      } else {
+        const data = await sbAuth("token?grant_type=password", email, password);
+        // 허용된 이메일인지 확인
+        const allowed = await sbFetch(`allowed_users?email=eq.${encodeURIComponent(email)}&select=email`);
+        if (!allowed || allowed.length === 0) {
+          throw new Error("접근 권한이 없습니다.");
+        }
+        onLogin({ token: data.access_token, email, name: email.split("@")[0] });
+      }
+    } catch(e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ fontFamily:"'Noto Sans KR',sans-serif", background:"#0d1117", minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center" }}>
+      <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet"/>
+      <div style={{ width:360, background:"#161b22", border:"1px solid #21262d", borderRadius:12, padding:32 }}>
+        {/* 로고 */}
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:28 }}>
+          <div style={{ width:36, height:36, background:"linear-gradient(135deg,#e85d04,#f48c06)", borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, fontWeight:700, color:"#fff" }}>V</div>
+          <div>
+            <div style={{ fontWeight:700, fontSize:16, color:"#e6edf3" }}>Verita</div>
+            <div style={{ fontSize:11, color:"#6e7681" }}>매물 수집 시스템</div>
+          </div>
+        </div>
+
+        {/* 탭 */}
+        <div style={{ display:"flex", marginBottom:24, background:"#0d1117", borderRadius:8, padding:3 }}>
+          {[["login","로그인"],["signup","회원가입"]].map(([key,label])=>(
+            <button key={key} onClick={()=>{ setMode(key); setError(""); }}
+              style={{ flex:1, padding:"7px 0", borderRadius:6, border:"none", background:mode===key?"#21262d":"transparent", color:mode===key?"#e6edf3":"#6e7681", fontSize:13, fontWeight:mode===key?600:400, cursor:"pointer" }}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {/* 폼 */}
+        <div style={{ marginBottom:14 }}>
+          <div style={{ fontSize:12, color:"#8b949e", marginBottom:6 }}>이메일</div>
+          <input value={email} onChange={e=>setEmail(e.target.value)}
+            placeholder="이메일 입력"
+            style={{ width:"100%", boxSizing:"border-box", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"9px 12px", color:"#e6edf3", fontSize:13, outline:"none" }}
+          />
+        </div>
+        <div style={{ marginBottom:20 }}>
+          <div style={{ fontSize:12, color:"#8b949e", marginBottom:6 }}>비밀번호</div>
+          <input value={password} onChange={e=>setPassword(e.target.value)}
+            type="password" placeholder="비밀번호 입력"
+            onKeyDown={e=>e.key==="Enter"&&handleSubmit()}
+            style={{ width:"100%", boxSizing:"border-box", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"9px 12px", color:"#e6edf3", fontSize:13, outline:"none" }}
+          />
+        </div>
+
+        {error && (
+          <div style={{ background:"#2d0f0f", border:"1px solid #7f1d1d", borderRadius:6, padding:"8px 12px", fontSize:12, color:"#fca5a5", marginBottom:14 }}>
+            {error}
+          </div>
+        )}
+
+        <button onClick={handleSubmit} disabled={loading}
+          style={{ width:"100%", background:loading?"#21262d":"linear-gradient(135deg,#e85d04,#f48c06)", color:"#fff", border:"none", borderRadius:7, padding:"11px 0", fontSize:14, fontWeight:700, cursor:loading?"not-allowed":"pointer" }}>
+          {loading ? "처리 중..." : mode==="login" ? "로그인" : "회원가입"}
+        </button>
+
+        {mode==="signup" && (
+          <div style={{ marginTop:14, fontSize:11, color:"#6e7681", textAlign:"center", lineHeight:1.6 }}>
+            관리자가 허용한 이메일만 가입 가능합니다
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── 상세 패널 ──
 function DetailPanel({ lead, note, setNote, onClose, onStatus, onSave, saving }) {
   const src = SOURCES[lead.source] || { label: lead.source, color: "#555" };
   const rows = [
@@ -66,7 +175,7 @@ function DetailPanel({ lead, note, setNote, onClose, onStatus, onSave, saving })
       <div style={{ flex:1, overflowY:"auto", padding:14 }}>
         <div style={{ background:"#0d1117", borderRadius:8, overflow:"hidden", marginBottom:12 }}>
           {rows.map(({ label, value }, i) => (
-            <div key={label} style={{ display:"grid", gridTemplateColumns:"60px 1fr", padding:"9px 12px", borderBottom: i<rows.length-1?"1px solid #21262d":"none", alignItems:"start" }}>
+            <div key={label} style={{ display:"grid", gridTemplateColumns:"60px 1fr", padding:"9px 12px", borderBottom:i<rows.length-1?"1px solid #21262d":"none", alignItems:"start" }}>
               <span style={{ fontSize:11, color:"#6e7681", paddingTop:1, whiteSpace:"nowrap" }}>{label}</span>
               <span style={{ fontSize:12, color:"#e6edf3", fontWeight:label==="연락처"?600:400, wordBreak:"break-all", lineHeight:1.5 }}>{value}</span>
             </div>
@@ -105,7 +214,8 @@ function DetailPanel({ lead, note, setNote, onClose, onStatus, onSave, saving })
   );
 }
 
-export default function App() {
+// ── 메인 대시보드 ──
+function Dashboard({ user, onLogout }) {
   const [leads, setLeads]         = useState([]);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState(null);
@@ -120,12 +230,12 @@ export default function App() {
   const loadLeads = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const data = await sbFetch("property_leads?select=*&order=collected_at.desc&limit=300");
+      const data = await sbFetch("property_leads?select=*&order=collected_at.desc&limit=300", {}, user.token);
       setLeads(Array.isArray(data) ? data : []);
       setLastRefresh(new Date());
     } catch(e) { setError(e.message); }
     finally { setLoading(false); }
-  }, []);
+  }, [user.token]);
 
   useEffect(() => { loadLeads(); }, [loadLeads]);
 
@@ -146,7 +256,7 @@ export default function App() {
 
   async function updateStatus(newStatus) {
     try {
-      await sbFetch(`property_leads?id=eq.${selected.id}`, { method:"PATCH", body:JSON.stringify({status:newStatus}) });
+      await sbFetch(`property_leads?id=eq.${selected.id}`, { method:"PATCH", body:JSON.stringify({status:newStatus}) }, user.token);
       setLeads(p=>p.map(l=>l.id===selected.id?{...l,status:newStatus}:l));
       setSelected(p=>({...p,status:newStatus}));
     } catch(e) { alert("오류: "+e.message); }
@@ -155,7 +265,7 @@ export default function App() {
   async function saveNote() {
     setSaving(true);
     try {
-      await sbFetch(`property_leads?id=eq.${selected.id}`, { method:"PATCH", body:JSON.stringify({note, contacted_at:new Date().toISOString()}) });
+      await sbFetch(`property_leads?id=eq.${selected.id}`, { method:"PATCH", body:JSON.stringify({note, contacted_at:new Date().toISOString()}) }, user.token);
       setLeads(p=>p.map(l=>l.id===selected.id?{...l,note}:l));
       setSelected(p=>({...p,note}));
     } catch(e) { alert("오류: "+e.message); }
@@ -165,27 +275,30 @@ export default function App() {
   return (
     <div style={{ fontFamily:"'Noto Sans KR',sans-serif", background:"#0d1117", minHeight:"100vh", color:"#e6edf3" }}>
       <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet"/>
-      <style>{`
-        @keyframes spin{to{transform:rotate(360deg)}}
-        @keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
-        *::-webkit-scrollbar{width:4px}*::-webkit-scrollbar-track{background:#0d1117}*::-webkit-scrollbar-thumb{background:#30363d;border-radius:2px}
-      `}</style>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}} *::-webkit-scrollbar{width:4px} *::-webkit-scrollbar-track{background:#0d1117} *::-webkit-scrollbar-thumb{background:#30363d;border-radius:2px}`}</style>
+
+      {/* 헤더 */}
       <div style={{ background:"#161b22", borderBottom:"1px solid #21262d", padding:"0 20px", display:"flex", alignItems:"center", justifyContent:"space-between", height:52 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           <div style={{ width:26, height:26, background:"linear-gradient(135deg,#e85d04,#f48c06)", borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700 }}>V</div>
           <span style={{ fontWeight:700, fontSize:14 }}>Verita 매물 수집</span>
           <span style={{ fontSize:10, color:"#22c55e", background:"#052e16", padding:"2px 8px", borderRadius:10, border:"1px solid #16a34a" }}>● Live</span>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:14 }}>
           {lastRefresh && <span style={{ fontSize:11, color:"#6e7681" }}>갱신 {lastRefresh.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}</span>}
+          <span style={{ fontSize:12, color:"#8b949e" }}>👤 {user.name}</span>
           <button onClick={loadLeads} disabled={loading} style={{ background:loading?"#21262d":"linear-gradient(135deg,#e85d04,#f48c06)", color:"#fff", border:"none", borderRadius:6, padding:"6px 13px", fontSize:12, fontWeight:600, cursor:loading?"not-allowed":"pointer", display:"flex", alignItems:"center", gap:5 }}>
             <span style={{ display:"inline-block", animation:loading?"spin 1s linear infinite":"none" }}>⟳</span>
             {loading?"로딩 중...":"새로고침"}
           </button>
+          <button onClick={onLogout} style={{ background:"none", border:"1px solid #30363d", color:"#8b949e", borderRadius:6, padding:"6px 12px", fontSize:12, cursor:"pointer" }}>로그아웃</button>
         </div>
       </div>
+
       {error && <div style={{ background:"#2d0f0f", borderBottom:"1px solid #7f1d1d", padding:"8px 20px", fontSize:12, color:"#fca5a5" }}>⚠️ {error}</div>}
+
       <div style={{ display:"flex", height:"calc(100vh - 52px)" }}>
+        {/* 사이드바 */}
         <div style={{ width:148, background:"#161b22", borderRight:"1px solid #21262d", padding:"14px 0", flexShrink:0, overflowY:"auto" }}>
           <div style={{ padding:"0 12px 8px", fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px" }}>상태</div>
           {[["all","전체",leads.length],...Object.entries(STATUS_CONFIG).map(([k,v])=>[k,v.label,counts[k]])].map(([key,label,count])=>(
@@ -209,6 +322,8 @@ export default function App() {
             <div style={{ fontSize:10, color:"#6e7681", marginTop:2 }}>총 {leads.length}건</div>
           </div>
         </div>
+
+        {/* 리스트 */}
         <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
           <div style={{ padding:"10px 12px", borderBottom:"1px solid #21262d", background:"#161b22" }}>
             <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="주소 · 연락처 · 제목 검색..."
@@ -242,8 +357,30 @@ export default function App() {
             })}
           </div>
         </div>
+
         {selected&&<DetailPanel lead={selected} note={note} setNote={setNote} onClose={()=>setSelected(null)} onStatus={updateStatus} onSave={saveNote} saving={saving}/>}
       </div>
     </div>
   );
+}
+
+// ── 앱 루트 ──
+export default function App() {
+  const [user, setUser] = useState(() => {
+    const saved = localStorage.getItem("verita_user");
+    return saved ? JSON.parse(saved) : null;
+  });
+
+  function handleLogin(userData) {
+    localStorage.setItem("verita_user", JSON.stringify(userData));
+    setUser(userData);
+  }
+
+  function handleLogout() {
+    localStorage.removeItem("verita_user");
+    setUser(null);
+  }
+
+  if (!user) return <LoginPage onLogin={handleLogin} />;
+  return <Dashboard user={user} onLogout={handleLogout} />;
 }
