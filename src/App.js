@@ -5,11 +5,8 @@ const SUPABASE_ANON = process.env.REACT_APP_SUPABASE_ANON;
 const ADMIN_EMAIL = process.env.REACT_APP_ADMIN_EMAIL; // 관리자 이메일
 
 const SOURCES = {
-  gyocharo:    { label: "교차로",    color: "#e85d04" },
   oiljang:     { label: "오일장",    color: "#0077b6" },
   oiljang_line:{ label: "줄광고",    color: "#023e8a" },
-  daangn:      { label: "당근",      color: "#ff6900" },
-  naver_cafe:  { label: "네이버카페", color: "#03c75a" },
 };
 
 const STATUS_CONFIG = {
@@ -407,7 +404,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
           )}
           <button onClick={loadLeads} disabled={loading} style={{ background:loading?"#21262d":"linear-gradient(135deg,#e85d04,#f48c06)", color:"#fff", border:"none", borderRadius:6, padding:"6px 13px", fontSize:12, fontWeight:600, cursor:loading?"not-allowed":"pointer", display:"flex", alignItems:"center", gap:5 }}>
             <span style={{ display:"inline-block", animation:loading?"spin 1s linear infinite":"none" }}>⟳</span>
-            {loading?"로딩 중...":"새로고침"}
+            {loading?"불러오는 중...":"목록 새로고침"}
           </button>
           <button onClick={onLogout} style={{ background:"none", border:"1px solid #30363d", color:"#8b949e", borderRadius:6, padding:"6px 12px", fontSize:12, cursor:"pointer" }}>로그아웃</button>
         </div>
