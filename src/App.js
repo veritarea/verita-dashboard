@@ -345,7 +345,12 @@ function Dashboard({ user, onLogout, onAdmin }) {
 
   const today = new Date().toISOString().slice(0,10);
 
-  const AREAS = [["제주시", "제주시"], ["서귀포시", "서귀포시"]];
+  const AREAS = [
+    ["제주시", "제주시"],
+    ["서귀포시", "서귀포시"],
+    ["노형동", "노형동"],
+    ["연동", "연동"],
+  ];
 
   const filtered = leads.filter(l => {
     if (filter !== "all" && l.status !== filter) return false;
