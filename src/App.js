@@ -83,7 +83,7 @@ function LoginPage({ onLogin }) {
       const data = await sbAuth("token?grant_type=password", email, password);
       const allowed = await sbFetch(`allowed_users?email=eq.${encodeURIComponent(email)}&select=email,name`);
       if (!allowed || allowed.length === 0) throw new Error("접근 권한이 없습니다. 관리자에게 문의하세요.");
-      onLogin({ token: data.access_token, email, name: allowed[0].name || email.split("@")[0], isAdmin: email === ADMIN_EMAIL });
+      onLogin({ token: data.access_token, refresh_token: data.refresh_token, email, name: allowed[0].name || email.split("@")[0], isAdmin: email === ADMIN_EMAIL });
     } catch(e) {
       setError(e.message);
     } finally {
@@ -493,8 +493,34 @@ function Dashboard({ user, onLogout, onAdmin }) {
 
 // ── 앱 루트 ──
 export default function App() {
-  const [user, setUser]     = useState(() => { try { return JSON.parse(localStorage.getItem("verita_user")); } catch { return null; } });
-  const [page, setPage]     = useState("dashboard");
+  const [user, setUser] = useState(() => { try { return JSON.parse(localStorage.getItem("verita_user")); } catch { return null; } });
+  const [page, setPage] = useState("dashboard");
+
+  // 토큰 만료 감지 (1시간마다 체크)
+  useEffect(() => {
+    if (!user) return;
+    async function refreshToken() {
+      try {
+        const saved = JSON.parse(localStorage.getItem("verita_user"));
+        if (!saved?.refresh_token) return;
+        const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+          method: "POST",
+          headers: { "apikey": SUPABASE_ANON, "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: saved.refresh_token }),
+        });
+        if (!res.ok) { handleLogout(); return; }
+        const data = await res.json();
+        const updated = { ...saved, token: data.access_token, refresh_token: data.refresh_token };
+        localStorage.setItem("verita_user", JSON.stringify(updated));
+        setUser(updated);
+      } catch {
+        handleLogout();
+      }
+    }
+    refreshToken();
+    const interval = setInterval(refreshToken, 50 * 60 * 1000); // 50분마다
+    return () => clearInterval(interval);
+  }, []);
 
   function handleLogin(userData) {
     localStorage.setItem("verita_user", JSON.stringify(userData));
