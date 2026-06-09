@@ -290,9 +290,14 @@ function DetailPanel({ lead, note, setNote, onClose, onStatus, onSave, saving })
             <div style={{ fontSize:11, color:"#8b949e", lineHeight:1.7, wordBreak:"break-all" }}>{lead.description}</div>
           </div>
         )}
-        <a href={`tel:${lead.phone}`} style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, background:"linear-gradient(135deg,#16a34a,#22c55e)", color:"#fff", padding:"10px 0", borderRadius:7, fontSize:13, fontWeight:700, textDecoration:"none", marginBottom:12 }}>
+        <a href={`tel:${lead.phone}`} style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:8, background:"linear-gradient(135deg,#16a34a,#22c55e)", color:"#fff", padding:"10px 0", borderRadius:7, fontSize:13, fontWeight:700, textDecoration:"none", marginBottom:lead.url?6:12 }}>
           📞 {lead.phone}
         </a>
+        {lead.url && (
+          <a href={lead.url} target="_blank" rel="noreferrer" style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6, background:"#21262d", border:"1px solid #30363d", color:"#8b949e", padding:"8px 0", borderRadius:7, fontSize:12, fontWeight:600, textDecoration:"none", marginBottom:12 }}>
+            🔗 오일장 원문 보기
+          </a>
+        )}
         <div style={{ marginBottom:12 }}>
           <div style={{ fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px", marginBottom:7 }}>상태</div>
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:5 }}>
