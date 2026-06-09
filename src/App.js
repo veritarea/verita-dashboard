@@ -14,7 +14,7 @@ const STATUS_CONFIG = {
   called:    { label: "연락완료", color: "#3b82f6", bg: "#0c1a2e" },
   callback:  { label: "콜백예정", color: "#f59e0b", bg: "#2d1f00" },
   acquired:  { label: "물건확보", color: "#a78bfa", bg: "#1e1030" },
-  rejected:  { label: "거절",    color: "#6b7280", bg: "#1a1a1a" },
+  rejected:  { label: "거절",    color: "#ef4444", bg: "#2d0f0f" },
   duplicate: { label: "중복",    color: "#9ca3af", bg: "#111" },
 };
 
