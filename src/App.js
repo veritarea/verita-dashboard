@@ -442,7 +442,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
           </div>
           <div style={{ margin:"12px 12px 8px", height:1, background:"#21262d" }}/>
           <div style={{ padding:"0 12px 8px", fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px" }}>지역</div>
-          {[["all","전체"],["제주시","제주시"],["서귀포시","서귀포시"]].map(([key,label])=>(
+          {[["all","전체"],...AREAS].map(([key,label])=>(
             <button key={key} onClick={()=>setAreaFilter(key)}
               style={{ width:"100%", textAlign:"left", padding:"6px 12px", background:areaFilter===key?"#21262d":"transparent", border:"none", color:areaFilter===key?"#e6edf3":"#8b949e", fontSize:12, cursor:"pointer" }}>
               {label}
