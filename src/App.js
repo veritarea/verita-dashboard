@@ -5,7 +5,7 @@ const SUPABASE_ANON = process.env.REACT_APP_SUPABASE_ANON;
 const ADMIN_EMAIL = process.env.REACT_APP_ADMIN_EMAIL; // 관리자 이메일
 
 const SOURCES = {
-  gyocharo:    { label: "교차로",    color: "#e85d04" },
+  gyocharo:    { label: "교차로",    color: "#f5c400" },
   oiljang:     { label: "오일장",    color: "#0077b6" },
   oiljang_line:{ label: "줄광고",    color: "#023e8a" },
   daangn:      { label: "당근",      color: "#ff6900" },
@@ -297,7 +297,7 @@ function DetailPanel({ lead, note, setNote, onClose, onStatus, onSave, saving })
         </a>
         {lead.url && (
           <a href={lead.url} target="_blank" rel="noreferrer" style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6, background:"#21262d", border:"1px solid #30363d", color:"#8b949e", padding:"8px 0", borderRadius:7, fontSize:12, fontWeight:600, textDecoration:"none", marginBottom:12 }}>
-            🔗 오일장 원문 보기
+            🔗 원문 보기
           </a>
         )}
         <div style={{ marginBottom:12 }}>
