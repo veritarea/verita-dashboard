@@ -5,6 +5,7 @@ const SUPABASE_ANON = process.env.REACT_APP_SUPABASE_ANON;
 const ADMIN_EMAIL = process.env.REACT_APP_ADMIN_EMAIL; // 관리자 이메일
 
 const SOURCES = {
+  gyocharo:    { label: "교차로",    color: "#e85d04" },
   oiljang:     { label: "오일장",    color: "#0077b6" },
   oiljang_line:{ label: "줄광고",    color: "#023e8a" },
 };
