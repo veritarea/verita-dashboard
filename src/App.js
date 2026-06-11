@@ -8,6 +8,7 @@ const SOURCES = {
   gyocharo:    { label: "교차로",    color: "#e85d04" },
   oiljang:     { label: "오일장",    color: "#0077b6" },
   oiljang_line:{ label: "줄광고",    color: "#023e8a" },
+  daangn:      { label: "당근",      color: "#ff6900" },
 };
 
 const STATUS_CONFIG = {
