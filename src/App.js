@@ -259,7 +259,7 @@ function AdminPage({ user, onBack }) {
 }
 
 // ── 상세 패널 ──
-function DetailPanel({ lead, note, setNote, onClose, onStatus, onSave, saving }) {
+function DetailPanel({ lead, note, setNote, onClose, onStatus, onSave, saving, user }) {
   const src = SOURCES[lead.source] || { label: lead.source, color: "#555" };
   const rows = [
     { label: "지번주소", value: lead.address_jibun || lead.address_raw?.slice(0,60) || "-" },
@@ -302,12 +302,22 @@ function DetailPanel({ lead, note, setNote, onClose, onStatus, onSave, saving })
         )}
         <div style={{ marginBottom:12 }}>
           <div style={{ fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px", marginBottom:7 }}>상태</div>
+          {lead.assigned_to && (
+            <div style={{ display:"flex", alignItems:"center", gap:6, background:"#1e1030", border:"1px solid #a78bfa", borderRadius:6, padding:"6px 10px", marginBottom:8 }}>
+              <span style={{ fontSize:11, color:"#a78bfa" }}>🔒</span>
+              <span style={{ fontSize:11, color:"#a78bfa", fontWeight:700 }}>{lead.assigned_to}님 확보</span>
+            </div>
+          )}
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:5 }}>
-            {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
-              <button key={key} onClick={()=>onStatus(key)} style={{ padding:"6px 0", borderRadius:6, cursor:"pointer", border:`1px solid ${lead.status===key?cfg.color:"#30363d"}`, background:lead.status===key?cfg.bg:"transparent", color:lead.status===key?cfg.color:"#6e7681", fontSize:11, fontWeight:lead.status===key?700:400 }}>
-                {cfg.label}
-              </button>
-            ))}
+            {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
+              const isLocked = lead.assigned_to && lead.assigned_to !== user?.name && !user?.isAdmin;
+              const disabled = isLocked;
+              return (
+                <button key={key} onClick={()=>!disabled&&onStatus(key)} style={{ padding:"6px 0", borderRadius:6, cursor:disabled?"not-allowed":"pointer", border:`1px solid ${lead.status===key?cfg.color:"#30363d"}`, background:lead.status===key?cfg.bg:"transparent", color:disabled?"#333":lead.status===key?cfg.color:"#6e7681", fontSize:11, fontWeight:lead.status===key?700:400, opacity:disabled?0.4:1 }}>
+                  {cfg.label}
+                </button>
+              );
+            })}
           </div>
         </div>
         <div>
@@ -378,10 +388,25 @@ function Dashboard({ user, onLogout, onAdmin }) {
   const todayCount = leads.filter(l=>l.collected_at?.startsWith(today)).length;
 
   async function updateStatus(newStatus) {
+    // 다른 사람이 물건확보한 경우 차단 (관리자 제외)
+    if (selected.assigned_to && selected.assigned_to !== user.name && !user.isAdmin) {
+      alert(selected.assigned_to + "님이 이미 확보한 매물입니다.");
+      return;
+    }
+    // 물건확보 취소 시 본인 확인
+    if (selected.status === "acquired" && newStatus !== "acquired") {
+      if (selected.assigned_to !== user.name && !user.isAdmin) {
+        alert("본인이 확보한 매물만 변경할 수 있습니다.");
+        return;
+      }
+    }
     try {
-      await sbFetch(`property_leads?id=eq.${selected.id}`, { method:"PATCH", body:JSON.stringify({status:newStatus}) }, user.token);
-      setLeads(p=>p.map(l=>l.id===selected.id?{...l,status:newStatus}:l));
-      setSelected(p=>({...p,status:newStatus}));
+      const patch = { status: newStatus };
+      if (newStatus === "acquired") patch.assigned_to = user.name;
+      if (selected.status === "acquired" && newStatus !== "acquired") patch.assigned_to = null;
+      await sbFetch(`property_leads?id=eq.${selected.id}`, { method:"PATCH", body:JSON.stringify(patch) }, user.token);
+      setLeads(p=>p.map(l=>l.id===selected.id?{...l,...patch}:l));
+      setSelected(p=>({...p,...patch}));
     } catch(e) { alert("오류: "+e.message); }
   }
 
@@ -487,12 +512,13 @@ function Dashboard({ user, onLogout, onAdmin }) {
                     <span style={{ whiteSpace:"nowrap" }}>💰 {lead.price||"-"}</span>
                   </div>
                   {lead.note&&<div style={{ marginTop:6, fontSize:10, color:"#f48c06", background:"#1a1206", padding:"3px 8px", borderRadius:3, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>💬 {lead.note}</div>}
+                  {lead.assigned_to&&<div style={{ marginTop:4, fontSize:10, color:"#a78bfa", background:"#1e1030", padding:"3px 8px", borderRadius:3, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>🔒 {lead.assigned_to}님 확보</div>}
                 </div>
               );
             })}
           </div>
         </div>
-        {selected&&<DetailPanel lead={selected} note={note} setNote={setNote} onClose={()=>setSelected(null)} onStatus={updateStatus} onSave={saveNote} saving={saving}/>}
+        {selected&&<DetailPanel lead={selected} note={note} setNote={setNote} onClose={()=>setSelected(null)} onStatus={updateStatus} onSave={saveNote} saving={saving} user={user}/>}
       </div>
     </div>
   );
