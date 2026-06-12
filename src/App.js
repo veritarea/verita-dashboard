@@ -351,7 +351,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
   const loadLeads = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const data = await sbFetch("property_leads?select=*&order=collected_at.desc&limit=1000", {}, user.token);
+      const data = await sbFetch("property_leads?select=*&order=collected_at.desc&limit=10000", {}, user.token);
       setLeads(Array.isArray(data) ? data : []);
       setLastRefresh(new Date());
     } catch(e) { setError(e.message); }
