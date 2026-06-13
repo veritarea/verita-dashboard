@@ -71,6 +71,144 @@ function timeAgo(d) {
   return `${Math.floor(s/86400)}일 전`;
 }
 
+// ── 통계 대시보드 ──
+function StatBox({ label, value, color, sub }) {
+  return (
+    <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:"16px 18px", flex:1, minWidth:140 }}>
+      <div style={{ fontSize:11, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.6px", marginBottom:8 }}>{label}</div>
+      <div style={{ fontSize:28, fontWeight:800, color:color||"#e6edf3", lineHeight:1 }}>{value}</div>
+      {sub && <div style={{ fontSize:11, color:"#6e7681", marginTop:6 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function BarRow({ label, count, total, color }) {
+  const pct = total>0 ? Math.round((count/total)*100) : 0;
+  return (
+    <div style={{ marginBottom:10 }}>
+      <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:"#8b949e", marginBottom:4 }}>
+        <span>{label}</span>
+        <span style={{ color:"#e6edf3", fontWeight:600 }}>{count}건 ({pct}%)</span>
+      </div>
+      <div style={{ background:"#21262d", borderRadius:4, height:8, overflow:"hidden" }}>
+        <div style={{ background:color, width:`${pct}%`, height:"100%", borderRadius:4, transition:"width 0.3s" }}/>
+      </div>
+    </div>
+  );
+}
+
+function StatsPanel({ leads, today }) {
+  const total = leads.length;
+
+  // 소스별 집계
+  const bySource = Object.keys(SOURCES).map(key => ({
+    key, label: SOURCES[key].label, color: SOURCES[key].color,
+    count: leads.filter(l=>l.source===key).length,
+  }));
+
+  // 상태별 집계
+  const byStatus = Object.keys(STATUS_CONFIG).map(key => ({
+    key, label: STATUS_CONFIG[key].label, color: STATUS_CONFIG[key].color,
+    count: leads.filter(l=>l.status===key).length,
+  }));
+
+  // 지역별 집계
+  const AREA_KEYS = ["노형동", "연동"];
+  const byArea = AREA_KEYS.map(area => ({
+    label: area,
+    count: leads.filter(l=>(l.address_jibun||l.address_raw||"").includes(area)).length,
+  }));
+  const otherArea = total - byArea.reduce((s,a)=>s+a.count,0);
+
+  // 담당자별 확보 현황
+  const assignees = {};
+  leads.forEach(l=>{
+    if (l.assigned_to) assignees[l.assigned_to] = (assignees[l.assigned_to]||0)+1;
+  });
+  const assigneeList = Object.entries(assignees).sort((a,b)=>b[1]-a[1]);
+
+  // 최근 7일 수집 추이
+  const days = [];
+  for (let i=6;i>=0;i--) {
+    const d = new Date();
+    d.setDate(d.getDate()-i);
+    const key = d.toISOString().slice(0,10);
+    const label = d.toLocaleDateString('ko-KR',{month:'numeric',day:'numeric'});
+    const count = leads.filter(l=>l.collected_at?.startsWith(key)).length;
+    days.push({ key, label, count });
+  }
+  const maxDayCount = Math.max(...days.map(d=>d.count), 1);
+
+  // 전화번호 보유율
+  const withPhone = leads.filter(l=>l.phone && l.phone !== "📞연락처있음" ? true : !!l.phone).length;
+  const acquiredCount = leads.filter(l=>l.status==="acquired").length;
+  const todayCount = leads.filter(l=>l.collected_at?.startsWith(today)).length;
+
+  return (
+    <div style={{ flex:1, overflowY:"auto", padding:"20px 24px", height:"calc(100vh - 52px)", boxSizing:"border-box" }}>
+      {/* 상단 요약 카드 */}
+      <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:24 }}>
+        <StatBox label="전체 매물" value={total} />
+        <StatBox label="오늘 수집" value={todayCount} color="#f48c06" />
+        <StatBox label="물건확보" value={acquiredCount} color="#a78bfa" sub={total>0?`전체의 ${Math.round(acquiredCount/total*100)}%`:""} />
+        <StatBox label="연락처 확보" value={withPhone} color="#22c55e" sub={total>0?`전체의 ${Math.round(withPhone/total*100)}%`:""} />
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:16 }}>
+        {/* 소스별 분포 */}
+        <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:18 }}>
+          <div style={{ fontSize:13, fontWeight:700, marginBottom:14 }}>📡 소스별 수집 현황</div>
+          {bySource.map(s=>(
+            <BarRow key={s.key} label={s.label} count={s.count} total={total} color={s.color}/>
+          ))}
+        </div>
+
+        {/* 상태별 분포 */}
+        <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:18 }}>
+          <div style={{ fontSize:13, fontWeight:700, marginBottom:14 }}>📌 상태별 분포</div>
+          {byStatus.map(s=>(
+            <BarRow key={s.key} label={s.label} count={s.count} total={total} color={s.color}/>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:16 }}>
+        {/* 지역별 분포 */}
+        <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:18 }}>
+          <div style={{ fontSize:13, fontWeight:700, marginBottom:14 }}>📍 지역별 분포</div>
+          {byArea.map(a=>(
+            <BarRow key={a.label} label={a.label} count={a.count} total={total} color="#388bfd"/>
+          ))}
+          {otherArea > 0 && <BarRow label="기타" count={otherArea} total={total} color="#6e7681"/>}
+        </div>
+
+        {/* 담당자별 확보 현황 */}
+        <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:18 }}>
+          <div style={{ fontSize:13, fontWeight:700, marginBottom:14 }}>🔒 담당자별 물건확보</div>
+          {assigneeList.length===0 && <div style={{ fontSize:12, color:"#6e7681" }}>아직 확보된 매물이 없습니다</div>}
+          {assigneeList.map(([name,count])=>(
+            <BarRow key={name} label={name} count={count} total={acquiredCount||1} color="#a78bfa"/>
+          ))}
+        </div>
+      </div>
+
+      {/* 최근 7일 수집 추이 */}
+      <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:18 }}>
+        <div style={{ fontSize:13, fontWeight:700, marginBottom:16 }}>📈 최근 7일 수집 추이</div>
+        <div style={{ display:"flex", alignItems:"flex-end", gap:10, height:120 }}>
+          {days.map(d=>(
+            <div key={d.key} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:6 }}>
+              <div style={{ fontSize:11, color:"#e6edf3", fontWeight:700 }}>{d.count}</div>
+              <div style={{ width:"100%", background:"linear-gradient(180deg,#f48c06,#e85d04)", borderRadius:"4px 4px 0 0", height:`${Math.max((d.count/maxDayCount)*90,d.count>0?6:2)}px`, transition:"height 0.3s" }}/>
+              <div style={{ fontSize:10, color:"#6e7681" }}>{d.label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── 로그인 화면 ──
 function LoginPage({ onLogin }) {
   const [email, setEmail]       = useState("");
@@ -347,6 +485,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
   const [note, setNote]           = useState("");
   const [saving, setSaving]       = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
+  const [view, setView] = useState("list"); // "list" | "stats"
 
   const loadLeads = useCallback(async () => {
     setLoading(true); setError(null);
@@ -430,6 +569,10 @@ function Dashboard({ user, onLogout, onAdmin }) {
           <div style={{ width:26, height:26, background:"linear-gradient(135deg,#e85d04,#f48c06)", borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700 }}>V</div>
           <span style={{ fontWeight:700, fontSize:14 }}>Verita 매물 수집</span>
           <span style={{ fontSize:10, color:"#22c55e", background:"#052e16", padding:"2px 8px", borderRadius:10, border:"1px solid #16a34a" }}>● Live</span>
+          <div style={{ display:"flex", gap:4, marginLeft:8 }}>
+            <button onClick={()=>setView("list")} style={{ background:view==="list"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="list"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="list"?700:400 }}>📋 매물목록</button>
+            <button onClick={()=>setView("stats")} style={{ background:view==="stats"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="stats"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="stats"?700:400 }}>📊 통계</button>
+          </div>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
           {lastRefresh && <span style={{ fontSize:11, color:"#6e7681" }}>갱신 {lastRefresh.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}</span>}
@@ -449,6 +592,9 @@ function Dashboard({ user, onLogout, onAdmin }) {
 
       {error && <div style={{ background:"#2d0f0f", borderBottom:"1px solid #7f1d1d", padding:"8px 20px", fontSize:12, color:"#fca5a5" }}>⚠️ {error}</div>}
 
+      {view === "stats" ? (
+        <StatsPanel leads={leads} today={today} />
+      ) : (
       <div style={{ display:"flex", height:"calc(100vh - 52px)" }}>
         <div style={{ width:148, background:"#161b22", borderRight:"1px solid #21262d", padding:"14px 0", flexShrink:0, overflowY:"auto" }}>
           <div style={{ padding:"0 12px 8px", fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px" }}>상태</div>
@@ -520,6 +666,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
         </div>
         {selected&&<DetailPanel lead={selected} note={note} setNote={setNote} onClose={()=>setSelected(null)} onStatus={updateStatus} onSave={saveNote} saving={saving} user={user}/>}
       </div>
+      )}
     </div>
   );
 }
