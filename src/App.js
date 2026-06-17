@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import WatermarkRemoverPanel from "./WatermarkRemover";
 
 const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
 const SUPABASE_ANON = process.env.REACT_APP_SUPABASE_ANON;
@@ -575,6 +576,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
           <div style={{ display:"flex", gap:4, marginLeft:8 }}>
             <button onClick={()=>setView("list")} style={{ background:view==="list"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="list"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="list"?700:400 }}>📋 매물목록</button>
             <button onClick={()=>setView("stats")} style={{ background:view==="stats"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="stats"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="stats"?700:400 }}>📊 통계</button>
+<button onClick={()=>setView("watermark")} style={{ background:view==="watermark"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="watermark"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="watermark"?700:400 }}>🧹 워터마크 제거</button>
           </div>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -597,6 +599,8 @@ function Dashboard({ user, onLogout, onAdmin }) {
 
       {view === "stats" ? (
         <StatsPanel leads={leads} today={today} />
+               ) : view === "watermark" ? (
+              <WatermarkRemoverPanel />
       ) : (
       <div style={{ display:"flex", height:"calc(100vh - 52px)" }}>
         <div style={{ width:148, background:"#161b22", borderRight:"1px solid #21262d", padding:"14px 0", flexShrink:0, overflowY:"auto" }}>
