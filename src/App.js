@@ -518,7 +518,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
     }
     if (search) {
       const q = search.toLowerCase();
-      const hay = [l.address_jibun,l.address_raw,l.phone,l.title,l.description,l.broker].join(" ").toLowerCase();
+      const hay = [l.address_jibun,l.address_raw,l.phone,l.title,l.description,l.broker,l.note].join(" ").toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
