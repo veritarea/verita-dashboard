@@ -187,7 +187,7 @@ function inpaintWatermark(canvas, ctx, x0, y0, boxW, boxH) {
 
   const cropData = ctx.getImageData(ex0, ey0, extW, extH);
   const n = extW * extH;
-  const rCh = new Uint8Array(n), gCh = new Uint8Array(n), bCh = new Uint8Array(n);
+  const rCh = new Uint8ClampedArray(n), gCh = new Uint8ClampedArray(n), bCh = new Uint8ClampedArray(n);
   for (let i = 0; i < n; i++) {
     rCh[i] = cropData.data[i * 4];
     gCh[i] = cropData.data[i * 4 + 1];
