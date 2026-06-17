@@ -375,10 +375,10 @@ export default function WatermarkRemoverPanel() {
   const [files, setFiles] = useState([]);
   const [calibSrc, setCalibSrc] = useState(null);
   const [calibDims, setCalibDims] = useState(null);
-  const [xPct, setXPct] = useState(0.47);
-  const [yPct, setYPct] = useState(0.485);
-  const [wPct, setWPct] = useState(0.28);
-  const [hPct, setHPct] = useState(0.06);
+  const [xPct, setXPct] = useState(0.49);
+  const [yPct, setYPct] = useState(0.50);
+  const [wPct, setWPct] = useState(0.25);
+  const [hPct, setHPct] = useState(0.05);
   const [quality, setQuality] = useState(0.92);
   const [aiMode, setAiMode] = useState(false);
   const [spaceUrl, setSpaceUrl] = useState(() => {
