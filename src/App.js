@@ -481,6 +481,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
   const [filter, setFilter]       = useState("all");
   const [srcFilter, setSrcFilter] = useState("all");
   const [areaFilter, setAreaFilter] = useState("all");
+  const [phoneFilter, setPhoneFilter] = useState("all");
   const [search, setSearch]       = useState("");
   const [selected, setSelected]   = useState(null);
   const [note, setNote]           = useState("");
@@ -516,6 +517,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
       const addr = (l.address_jibun || l.address_raw || "");
       if (!addr.includes(areaFilter)) return false;
     }
+    if (phoneFilter === "has" && !l.phone) return false;
     if (search) {
       const q = search.toLowerCase();
       const hay = [l.address_jibun,l.address_raw,l.phone,l.title,l.description,l.broker,l.note].join(" ").toLowerCase();
@@ -619,6 +621,14 @@ function Dashboard({ user, onLogout, onAdmin }) {
             <div style={{ fontSize:26, fontWeight:700, color:"#f48c06", lineHeight:1 }}>{todayCount}</div>
             <div style={{ fontSize:10, color:"#6e7681", marginTop:2 }}>총 {leads.length}건</div>
           </div>
+          <div style={{ margin:"12px 12px 8px", height:1, background:"#21262d" }}/>
+          <div style={{ padding:"0 12px 8px", fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px" }}>연락처</div>
+          {[["all","전체",leads.length],["has","연락처 있음",leads.filter(l=>!!l.phone).length]].map(([key,label,count])=>(
+            <button key={key} onClick={()=>setPhoneFilter(key)} style={{ width:"100%", textAlign:"left", padding:"6px 12px", background:phoneFilter===key?"#21262d":"transparent", border:"none", color:phoneFilter===key?"#e6edf3":"#8b949e", fontSize:12, cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <span>{label}</span>
+              <span style={{ fontSize:10, background:phoneFilter===key?"#30363d":"transparent", padding:"1px 6px", borderRadius:8, color:phoneFilter===key?"#e6edf3":"#6e7681" }}>{count}</span>
+            </button>
+          ))}
           <div style={{ margin:"12px 12px 8px", height:1, background:"#21262d" }}/>
           <div style={{ padding:"0 12px 8px", fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px" }}>지역</div>
           {[["all","전체"],...AREAS].map(([key,label])=>(
