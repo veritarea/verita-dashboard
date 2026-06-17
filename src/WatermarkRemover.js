@@ -267,6 +267,79 @@ async function processFile(file, xPct, yPct, wPct, hPct, quality) {
   return await new Promise((res) => canvas.toBlob(res, "image/jpeg", quality));
 }
 
+async function processFileAI(file, xPct, yPct, wPct, hPct, quality, spaceUrl) {
+  const img = await loadImage(file);
+  const canvas = document.createElement("canvas");
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0);
+
+  const W = canvas.width, H = canvas.height;
+  const boxW = Math.max(2, Math.round(W * wPct));
+  const boxH = Math.max(2, Math.round(H * hPct));
+  const x0 = clampInt(0, W - boxW, Math.round(W * xPct - boxW / 2));
+  const y0 = clampInt(0, H - boxH, Math.round(H * yPct - boxH / 2));
+
+  // send a padded crop (not the whole photo) to keep the upload small
+  const padX = Math.round(boxW * 1.0), padY = Math.round(boxH * 1.0);
+  const ex0 = clampInt(0, W, x0 - padX), ey0 = clampInt(0, H, y0 - padY);
+  const ex1 = clampInt(0, W, x0 + boxW + padX), ey1 = clampInt(0, H, y0 + boxH + padY);
+  const extW = ex1 - ex0, extH = ey1 - ey0;
+
+  const cropCanvas = document.createElement("canvas");
+  cropCanvas.width = extW; cropCanvas.height = extH;
+  cropCanvas.getContext("2d").drawImage(canvas, ex0, ey0, extW, extH, 0, 0, extW, extH);
+
+  const maskCanvas = document.createElement("canvas");
+  maskCanvas.width = extW; maskCanvas.height = extH;
+  const mctx = maskCanvas.getContext("2d");
+  mctx.fillStyle = "#000";
+  mctx.fillRect(0, 0, extW, extH);
+  mctx.fillStyle = "#fff";
+  mctx.fillRect(x0 - ex0, y0 - ey0, boxW, boxH);
+
+  const cropBlob = await new Promise((res) => cropCanvas.toBlob(res, "image/png"));
+  const maskBlob = await new Promise((res) => maskCanvas.toBlob(res, "image/png"));
+
+  const form = new FormData();
+  form.append("image", cropBlob, "crop.png");
+  form.append("mask", maskBlob, "mask.png");
+
+  const res = await fetch(spaceUrl.replace(/\/$/, "") + "/inpaint", { method: "POST", body: form });
+  if (!res.ok) throw new Error("AI 서버 오류 (" + res.status + ")");
+  const resultBlob = await res.blob();
+  const resultImg = await loadImage(resultBlob);
+
+  // composite just the masked box back into the original canvas, with the
+  // same edge feathering used in local mode
+  const originalBox = ctx.getImageData(x0, y0, boxW, boxH);
+  const boxCanvas = document.createElement("canvas");
+  boxCanvas.width = boxW; boxCanvas.height = boxH;
+  boxCanvas.getContext("2d").drawImage(resultImg, x0 - ex0, y0 - ey0, boxW, boxH, 0, 0, boxW, boxH);
+  const filled = boxCanvas.getContext("2d").getImageData(0, 0, boxW, boxH).data;
+
+  const half = Math.floor(Math.min(boxW, boxH) / 2);
+  let fw = Math.min(half - 1, Math.round(Math.min(boxW, boxH) * 0.12));
+  if (fw < 1) fw = 0;
+  for (let y = 0; y < boxH; y++) {
+    for (let x = 0; x < boxW; x++) {
+      const dx = Math.min(x, boxW - 1 - x);
+      const dy = Math.min(y, boxH - 1 - y);
+      const d = Math.min(dx, dy);
+      const alpha = fw <= 0 ? 1 : Math.min(1, d / fw);
+      const idx = (y * boxW + x) * 4;
+      for (let c = 0; c < 3; c++) {
+        originalBox.data[idx + c] = originalBox.data[idx + c] * (1 - alpha) + filled[idx + c] * alpha;
+      }
+      originalBox.data[idx + 3] = 255;
+    }
+  }
+  ctx.putImageData(originalBox, x0, y0);
+
+  return await new Promise((res) => canvas.toBlob(res, "image/jpeg", quality));
+}
+
 function fmtSize(bytes) {
   if (bytes < 1024) return bytes + "B";
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + "KB";
@@ -305,6 +378,10 @@ export default function WatermarkRemoverPanel() {
   const [wPct, setWPct] = useState(0.25);
   const [hPct, setHPct] = useState(0.12);
   const [quality, setQuality] = useState(0.92);
+  const [aiMode, setAiMode] = useState(false);
+  const [spaceUrl, setSpaceUrl] = useState(() => {
+    try { return localStorage.getItem("verita_lama_space_url") || ""; } catch { return ""; }
+  });
   const [results, setResults] = useState([]);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState("");
@@ -319,16 +396,31 @@ export default function WatermarkRemoverPanel() {
     setCalibSrc(URL.createObjectURL(fl[0]));
   }
 
+  function updateSpaceUrl(v) {
+    setSpaceUrl(v);
+    try { localStorage.setItem("verita_lama_space_url", v); } catch {}
+  }
+
   async function handleApply() {
     if (files.length === 0) return;
+    if (aiMode && !spaceUrl.trim()) {
+      alert("AI 모드를 쓰려면 Hugging Face Space 주소를 먼저 입력해주세요.");
+      return;
+    }
     setProcessing(true);
     setResults([]);
     const out = [];
     for (let i = 0; i < files.length; i++) {
-      setProgress(`처리 중... (${i + 1}/${files.length})`);
+      setProgress(
+        aiMode
+          ? `AI 서버 처리 중... (${i + 1}/${files.length}) — 서버가 잠들어 있었다면 첫 장은 1분 가까이 걸릴 수 있어요`
+          : `처리 중... (${i + 1}/${files.length})`
+      );
       const file = files[i];
       try {
-        const blob = await processFile(file, xPct, yPct, wPct, hPct, quality);
+        const blob = aiMode
+          ? await processFileAI(file, xPct, yPct, wPct, hPct, quality, spaceUrl.trim())
+          : await processFile(file, xPct, yPct, wPct, hPct, quality);
         const baseName = file.name.replace(/\.[^.]+$/, "");
         const r = {
           name: baseName + "_clean.jpg",
@@ -462,6 +554,34 @@ export default function WatermarkRemoverPanel() {
               />
             </div>
           ))}
+        </div>
+      )}
+
+      {calibSrc && (
+        <div style={cardStyle}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: aiMode ? 12 : 0 }}>
+            <div>
+              <div style={{ fontSize: 13, color: "#e6edf3", marginBottom: 2 }}>AI 모드 (LaMa, 서버 처리)</div>
+              <div style={{ fontSize: 11, color: "#6e7681" }}>복잡한 배경에서 더 자연스럽지만, 느리고 별도 서버가 필요해요</div>
+            </div>
+            <label style={{ position: "relative", display: "inline-block", width: 44, height: 24, flexShrink: 0, marginLeft: 12 }}>
+              <input type="checkbox" checked={aiMode} onChange={(e) => setAiMode(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+              <span onClick={() => setAiMode((v) => !v)} style={{ position: "absolute", inset: 0, background: aiMode ? "#f48c06" : "#30363d", borderRadius: 12, cursor: "pointer", transition: "background 0.15s" }}>
+                <span style={{ position: "absolute", top: 3, left: aiMode ? 23 : 3, width: 18, height: 18, background: "#fff", borderRadius: "50%", transition: "left 0.15s" }} />
+              </span>
+            </label>
+          </div>
+          {aiMode && (
+            <div>
+              <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 6 }}>Hugging Face Space 주소</div>
+              <input
+                value={spaceUrl}
+                onChange={(e) => updateSpaceUrl(e.target.value)}
+                placeholder="https://your-username-verita-watermark-inpaint.hf.space"
+                style={{ width: "100%", boxSizing: "border-box", background: "#0d1117", border: "1px solid #30363d", borderRadius: 6, padding: "8px 10px", color: "#e6edf3", fontSize: 12, outline: "none", fontFamily: "monospace" }}
+              />
+            </div>
+          )}
         </div>
       )}
 
