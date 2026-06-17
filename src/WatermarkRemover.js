@@ -340,6 +340,8 @@ async function processFileAI(file, xPct, yPct, wPct, hPct, quality, spaceUrl) {
   return await new Promise((res) => canvas.toBlob(res, "image/jpeg", quality));
 }
 
+const DEFAULT_LAMA_SPACE_URL = "https://1bt-verita-watermark-inpaint.hf.space";
+
 function fmtSize(bytes) {
   if (bytes < 1024) return bytes + "B";
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + "KB";
@@ -380,7 +382,7 @@ export default function WatermarkRemoverPanel() {
   const [quality, setQuality] = useState(0.92);
   const [aiMode, setAiMode] = useState(false);
   const [spaceUrl, setSpaceUrl] = useState(() => {
-    try { return localStorage.getItem("verita_lama_space_url") || ""; } catch { return ""; }
+    try { return localStorage.getItem("verita_lama_space_url") || DEFAULT_LAMA_SPACE_URL; } catch { return DEFAULT_LAMA_SPACE_URL; }
   });
   const [results, setResults] = useState([]);
   const [processing, setProcessing] = useState(false);
@@ -566,7 +568,7 @@ export default function WatermarkRemoverPanel() {
             </div>
             <label style={{ position: "relative", display: "inline-block", width: 44, height: 24, flexShrink: 0, marginLeft: 12 }}>
               <input type="checkbox" checked={aiMode} onChange={(e) => setAiMode(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
-              <span onClick={() => setAiMode((v) => !v)} style={{ position: "absolute", inset: 0, background: aiMode ? "#f48c06" : "#30363d", borderRadius: 12, cursor: "pointer", transition: "background 0.15s" }}>
+              <span style={{ position: "absolute", inset: 0, background: aiMode ? "#f48c06" : "#30363d", borderRadius: 12, cursor: "pointer", transition: "background 0.15s" }}>
                 <span style={{ position: "absolute", top: 3, left: aiMode ? 23 : 3, width: 18, height: 18, background: "#fff", borderRadius: "50%", transition: "left 0.15s" }} />
               </span>
             </label>
