@@ -3,123 +3,220 @@ import JSZip from "jszip";
 
 // ── 픽셀 처리 유틸 (순수 함수, React 상태 없음) ──
 
-function clampInt(min, max, v) {
-  return v < min ? min : v > max ? max : v;
-}
+// ── Fast Marching Method 인페인팅 (Telea, 2004 알고리즘 기반 자체 구현) ──
 
-function diffuseSmallRegion(data, w, h, bx0, by0, bw, bh, iterations) {
-  const n = bw * bh;
-  let cur = new Float32Array(n * 3);
-  let nxt = new Float32Array(n * 3);
-  for (let j = 0; j < bh; j++) {
-    for (let i = 0; i < bw; i++) {
-      const idx = ((by0 + j) * w + (bx0 + i)) * 4;
-      const k = (j * bw + i) * 3;
-      cur[k] = data[idx]; cur[k + 1] = data[idx + 1]; cur[k + 2] = data[idx + 2];
+const FMM_FAR = 1e6;
+const FMM_KNOWN = 0, FMM_BAND = 1, FMM_UNKNOWN = 2;
+
+function fmmCircleOffsets(radius) {
+  const offsets = [];
+  for (let dy = -radius; dy <= radius; dy++) {
+    const span = Math.floor(Math.sqrt(radius * radius - dy * dy));
+    for (let dx = -span; dx <= span; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      offsets.push([dx, dy]);
     }
   }
-  function outside(x, y, c) {
-    const gx = clampInt(0, w - 1, bx0 + x);
-    const gy = clampInt(0, h - 1, by0 + y);
-    return data[(gy * w + gx) * 4 + c];
+  return offsets;
+}
+
+function fmmSolveEikonal(u1, known1, u2, known2) {
+  if (known1 && known2) {
+    const diff = u1 - u2;
+    const disc = 2 - diff * diff;
+    if (disc < 0) return Math.min(u1, u2) + 1;
+    const root = Math.sqrt(disc);
+    let s = (u1 + u2 - root) / 2;
+    if (s >= u1 && s >= u2) return s;
+    s += root;
+    if (s >= u1 && s >= u2) return s;
+    return Math.min(u1, u2) + 1;
   }
-  for (let it = 0; it < iterations; it++) {
-    for (let j = 0; j < bh; j++) {
-      for (let i = 0; i < bw; i++) {
-        const k = (j * bw + i) * 3;
-        for (let c = 0; c < 3; c++) {
-          let sum = 0;
-          sum += i - 1 >= 0 ? cur[(j * bw + (i - 1)) * 3 + c] : outside(i - 1, j, c);
-          sum += i + 1 < bw ? cur[(j * bw + (i + 1)) * 3 + c] : outside(i + 1, j, c);
-          sum += j - 1 >= 0 ? cur[((j - 1) * bw + i) * 3 + c] : outside(i, j - 1, c);
-          sum += j + 1 < bh ? cur[((j + 1) * bw + i) * 3 + c] : outside(i, j + 1, c);
-          nxt[k + c] = sum / 4;
-        }
+  if (known1) return u1 + 1;
+  if (known2) return u2 + 1;
+  return FMM_FAR;
+}
+
+function fmmGradient(field, state, x, y, width, height, dx, dy) {
+  const here = y * width + x;
+  const fx = x + dx, fy = y + dy;
+  const bx = x - dx, by = y - dy;
+  const fwdOk = fx >= 0 && fx < width && fy >= 0 && fy < height && state[fy * width + fx] !== FMM_UNKNOWN;
+  const bwdOk = bx >= 0 && bx < width && by >= 0 && by < height && state[by * width + bx] !== FMM_UNKNOWN;
+  if (fwdOk && bwdOk) return (field[fy * width + fx] - field[by * width + bx]) / 2;
+  if (fwdOk) return field[fy * width + fx] - field[here];
+  if (bwdOk) return field[here] - field[by * width + bx];
+  return 0;
+}
+
+// Geometry-only pass: builds the marching-front fill order and per-pixel
+// neighbor weights. This depends only on the mask shape, not on pixel
+// colors, so it's computed once and reused for R, G, and B.
+function fmmPlan(width, height, mask, radius) {
+  const n = width * height;
+  const state = new Uint8Array(n);
+  const dist = new Float32Array(n);
+  const offsets = fmmCircleOffsets(radius);
+
+  for (let i = 0; i < n; i++) state[i] = mask[i] ? FMM_UNKNOWN : FMM_KNOWN;
+
+  const heap = [];
+  function heapPush(item) {
+    heap.push(item);
+    let i = heap.length - 1;
+    while (i > 0) {
+      const parent = (i - 1) >> 1;
+      if (heap[parent][0] <= heap[i][0]) break;
+      [heap[parent], heap[i]] = [heap[i], heap[parent]];
+      i = parent;
+    }
+  }
+  function heapPop() {
+    const top = heap[0];
+    const last = heap.pop();
+    if (heap.length > 0) {
+      heap[0] = last;
+      let i = 0;
+      while (true) {
+        const l = i * 2 + 1, r = l + 1;
+        let smallest = i;
+        if (l < heap.length && heap[l][0] < heap[smallest][0]) smallest = l;
+        if (r < heap.length && heap[r][0] < heap[smallest][0]) smallest = r;
+        if (smallest === i) break;
+        [heap[smallest], heap[i]] = [heap[i], heap[smallest]];
+        i = smallest;
       }
     }
-    const tmp = cur; cur = nxt; nxt = tmp;
+    return top;
   }
-  for (let j = 0; j < bh; j++) {
-    for (let i = 0; i < bw; i++) {
-      const idx = ((by0 + j) * w + (bx0 + i)) * 4;
-      const k = (j * bw + i) * 3;
-      data[idx] = cur[k]; data[idx + 1] = cur[k + 1]; data[idx + 2] = cur[k + 2]; data[idx + 3] = 255;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x;
+      if (state[i] !== FMM_UNKNOWN) continue;
+      const neighbors = [[x - 1, y], [x + 1, y], [x, y - 1], [x, y + 1]];
+      for (const [nx, ny] of neighbors) {
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+        const ni = ny * width + nx;
+        if (state[ni] === FMM_KNOWN) state[ni] = FMM_BAND;
+      }
     }
   }
+  for (let i = 0; i < n; i++) if (state[i] === FMM_BAND) heapPush([0, i]);
+
+  const plan = [];
+
+  while (heap.length) {
+    const [, n0] = heapPop();
+    const x0 = n0 % width, y0 = (n0 / width) | 0;
+    state[n0] = FMM_KNOWN;
+    if (x0 <= 1 || y0 <= 1 || x0 >= width - 2 || y0 >= height - 2) continue;
+
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (const [dx, dy] of dirs) {
+      const nx = x0 + dx, ny = y0 + dy;
+      const ni = ny * width + nx;
+      if (state[ni] === FMM_KNOWN) continue;
+
+      const get = (gx, gy) => {
+        const gi = gy * width + gx;
+        return [dist[gi], state[gi] === FMM_KNOWN];
+      };
+      const [u1a, k1a] = get(nx - 1, ny), [u1b, k1b] = get(nx + 1, ny);
+      const [u2a, k2a] = get(nx, ny - 1), [u2b, k2b] = get(nx, ny + 1);
+      dist[ni] = Math.min(
+        fmmSolveEikonal(u1a, k1a, u2a, k2a),
+        fmmSolveEikonal(u1b, k1b, u2a, k2a),
+        fmmSolveEikonal(u1a, k1a, u2b, k2b),
+        fmmSolveEikonal(u1b, k1b, u2b, k2b)
+      );
+
+      if (state[ni] === FMM_UNKNOWN) {
+        state[ni] = FMM_BAND;
+        heapPush([dist[ni], ni]);
+
+        const gx = fmmGradient(dist, state, nx, ny, width, height, 1, 0);
+        const gy = fmmGradient(dist, state, nx, ny, width, height, 0, 1);
+        const weighted = [];
+        for (const [ox, oy] of offsets) {
+          const sx = nx + ox, sy = ny + oy;
+          if (sx < 1 || sy < 1 || sx >= width - 1 || sy >= height - 1) continue;
+          const si = sy * width + sx;
+          if (state[si] === FMM_UNKNOWN) continue;
+          const geomDist = 1 / ((ox * ox + oy * oy) * Math.sqrt(ox * ox + oy * oy));
+          const levelDist = 1 / (1 + Math.abs(dist[si] - dist[ni]));
+          const direction = Math.abs(ox * gx + oy * gy) + 1e-6;
+          weighted.push([si, geomDist * levelDist * direction]);
+        }
+        plan.push([ni, weighted]);
+      }
+    }
+  }
+
+  return plan;
 }
 
-function meanColor3(data) {
-  let r = 0, g = 0, b = 0;
-  const n = data.length / 4;
-  for (let i = 0; i < data.length; i += 4) { r += data[i]; g += data[i + 1]; b += data[i + 2]; }
-  return [r / n, g / n, b / n];
+function fmmApply(channel, plan) {
+  for (const [target, weighted] of plan) {
+    if (weighted.length === 0) continue;
+    let sumW = 0, sumV = 0;
+    for (const [src, w] of weighted) {
+      sumW += w;
+      sumV += w * channel[src];
+    }
+    if (sumW > 0) channel[target] = sumV / sumW;
+  }
 }
 
-function inpaintWatermark(canvas, ctx, x0, y0, boxW, boxH, strength) {
+function inpaintWatermark(canvas, ctx, x0, y0, boxW, boxH) {
   const W = canvas.width, H = canvas.height;
   const originalBox = ctx.getImageData(x0, y0, boxW, boxH);
 
-  const padX = Math.round(boxW * 0.8), padY = Math.round(boxH * 0.8);
+  // crop a padded window so the marching front has real context to grow
+  // from, without paying the cost of running over the whole photo
+  const padX = Math.round(boxW * 0.6), padY = Math.round(boxH * 0.6);
   const ex0 = clampInt(0, W, x0 - padX), ey0 = clampInt(0, H, y0 - padY);
   const ex1 = clampInt(0, W, x0 + boxW + padX), ey1 = clampInt(0, H, y0 + boxH + padY);
   const extW = ex1 - ex0, extH = ey1 - ey0;
 
-  const targetLong = 140;
-  const scale = Math.min(1, targetLong / Math.max(extW, extH));
-  const smallW = Math.max(8, Math.round(extW * scale));
-  const smallH = Math.max(8, Math.round(extH * scale));
+  const cropData = ctx.getImageData(ex0, ey0, extW, extH);
+  const n = extW * extH;
+  const rCh = new Uint8Array(n), gCh = new Uint8Array(n), bCh = new Uint8Array(n);
+  for (let i = 0; i < n; i++) {
+    rCh[i] = cropData.data[i * 4];
+    gCh[i] = cropData.data[i * 4 + 1];
+    bCh[i] = cropData.data[i * 4 + 2];
+  }
 
-  const smallCanvas = document.createElement("canvas");
-  smallCanvas.width = smallW; smallCanvas.height = smallH;
-  const sctx = smallCanvas.getContext("2d");
-  sctx.drawImage(canvas, ex0, ey0, extW, extH, 0, 0, smallW, smallH);
-  const smallImgData = sctx.getImageData(0, 0, smallW, smallH);
-
-  let sbx0 = clampInt(0, smallW - 1, Math.round((x0 - ex0) * scale));
-  let sby0 = clampInt(0, smallH - 1, Math.round((y0 - ey0) * scale));
-  let sbw = Math.min(Math.max(1, Math.round(boxW * scale)), smallW - sbx0);
-  let sbh = Math.min(Math.max(1, Math.round(boxH * scale)), smallH - sby0);
-
-  diffuseSmallRegion(smallImgData.data, smallW, smallH, sbx0, sby0, sbw, sbh, 120);
-  sctx.putImageData(smallImgData, 0, 0);
-
-  const fbCanvas = document.createElement("canvas");
-  fbCanvas.width = boxW; fbCanvas.height = boxH;
-  const fctx = fbCanvas.getContext("2d");
-  fctx.drawImage(smallCanvas, sbx0, sby0, sbw, sbh, 0, 0, boxW, boxH);
-  const fbData = fctx.getImageData(0, 0, boxW, boxH);
-
-  const candidates = [];
-  if (x0 - boxW >= 0) candidates.push([x0 - boxW, y0]);
-  if (x0 + boxW * 2 <= W) candidates.push([x0 + boxW, y0]);
-  if (y0 - boxH >= 0) candidates.push([x0, y0 - boxH]);
-  if (y0 + boxH * 2 <= H) candidates.push([x0, y0 + boxH]);
-
-  const out = new Uint8ClampedArray(boxW * boxH * 4);
-  if (candidates.length === 0 || strength <= 0) {
-    out.set(fbData.data);
-  } else {
-    const fbMean = meanColor3(fbData.data);
-    let bestPatch = null, bestMean = null, bestDist = Infinity;
-    candidates.forEach(([sx, sy]) => {
-      const patch = ctx.getImageData(sx, sy, boxW, boxH);
-      const m = meanColor3(patch.data);
-      const dist = (m[0] - fbMean[0]) ** 2 + (m[1] - fbMean[1]) ** 2 + (m[2] - fbMean[2]) ** 2;
-      if (dist < bestDist) { bestDist = dist; bestPatch = patch; bestMean = m; }
-    });
-    const shift = [fbMean[0] - bestMean[0], fbMean[1] - bestMean[1], fbMean[2] - bestMean[2]];
-    const pd = bestPatch.data;
-    for (let i = 0; i < out.length; i += 4) {
-      for (let c = 0; c < 3; c++) {
-        const cloned = pd[i + c] + shift[c];
-        out[i + c] = fbData.data[i + c] * (1 - strength) + cloned * strength;
-      }
-      out[i + 3] = 255;
+  const mask = new Uint8Array(n);
+  const lx0 = x0 - ex0, ly0 = y0 - ey0;
+  for (let y = ly0; y < ly0 + boxH; y++) {
+    for (let x = lx0; x < lx0 + boxW; x++) {
+      mask[y * extW + x] = 1;
     }
   }
 
+  const plan = fmmPlan(extW, extH, mask, 3);
+  fmmApply(rCh, plan);
+  fmmApply(gCh, plan);
+  fmmApply(bCh, plan);
+
+  const filled = new Uint8ClampedArray(boxW * boxH * 4);
+  for (let y = 0; y < boxH; y++) {
+    for (let x = 0; x < boxW; x++) {
+      const srcI = (ly0 + y) * extW + (lx0 + x);
+      const dstI = (y * boxW + x) * 4;
+      filled[dstI] = rCh[srcI];
+      filled[dstI + 1] = gCh[srcI];
+      filled[dstI + 2] = bCh[srcI];
+      filled[dstI + 3] = 255;
+    }
+  }
+
+  // feather the result into the original box edges so the treated area
+  // doesn't read as a hard-edged rectangle
   const half = Math.floor(Math.min(boxW, boxH) / 2);
-  let fw = Math.min(half - 1, Math.round(Math.min(boxW, boxH) * 0.18));
+  let fw = Math.min(half - 1, Math.round(Math.min(boxW, boxH) * 0.12));
   if (fw < 1) fw = 0;
   for (let y = 0; y < boxH; y++) {
     for (let x = 0; x < boxW; x++) {
@@ -129,7 +226,7 @@ function inpaintWatermark(canvas, ctx, x0, y0, boxW, boxH, strength) {
       const alpha = fw <= 0 ? 1 : Math.min(1, d / fw);
       const idx = (y * boxW + x) * 4;
       for (let c = 0; c < 3; c++) {
-        originalBox.data[idx + c] = originalBox.data[idx + c] * (1 - alpha) + out[idx + c] * alpha;
+        originalBox.data[idx + c] = originalBox.data[idx + c] * (1 - alpha) + filled[idx + c] * alpha;
       }
       originalBox.data[idx + 3] = 255;
     }
@@ -146,7 +243,7 @@ function loadImage(file) {
   });
 }
 
-async function processFile(file, xPct, yPct, wPct, hPct, strength, quality) {
+async function processFile(file, xPct, yPct, wPct, hPct, quality) {
   const img = await loadImage(file);
   const canvas = document.createElement("canvas");
   canvas.width = img.naturalWidth;
@@ -159,7 +256,7 @@ async function processFile(file, xPct, yPct, wPct, hPct, strength, quality) {
   const x0 = clampInt(0, canvas.width - boxW, Math.round(canvas.width * xPct - boxW / 2));
   const y0 = clampInt(0, canvas.height - boxH, Math.round(canvas.height * yPct - boxH / 2));
 
-  inpaintWatermark(canvas, ctx, x0, y0, boxW, boxH, strength);
+  inpaintWatermark(canvas, ctx, x0, y0, boxW, boxH);
 
   return await new Promise((res) => canvas.toBlob(res, "image/jpeg", quality));
 }
@@ -201,7 +298,6 @@ export default function WatermarkRemoverPanel() {
   const [yPct, setYPct] = useState(0.5);
   const [wPct, setWPct] = useState(0.25);
   const [hPct, setHPct] = useState(0.12);
-  const [strength, setStrength] = useState(0.7);
   const [quality, setQuality] = useState(0.92);
   const [results, setResults] = useState([]);
   const [processing, setProcessing] = useState(false);
@@ -226,7 +322,7 @@ export default function WatermarkRemoverPanel() {
       setProgress(`처리 중... (${i + 1}/${files.length})`);
       const file = files[i];
       try {
-        const blob = await processFile(file, xPct, yPct, wPct, hPct, strength, quality);
+        const blob = await processFile(file, xPct, yPct, wPct, hPct, quality);
         const baseName = file.name.replace(/\.[^.]+$/, "");
         const r = {
           name: baseName + "_clean.jpg",
@@ -343,7 +439,6 @@ export default function WatermarkRemoverPanel() {
             { label: "세로 위치", value: yPct, set: setYPct, min: 0, max: 100, fmt: (v) => Math.round(v * 100) + "%" },
             { label: "가로 크기", value: wPct, set: setWPct, min: 5, max: 70, fmt: (v) => Math.round(v * 100) + "%" },
             { label: "세로 크기", value: hPct, set: setHPct, min: 5, max: 70, fmt: (v) => Math.round(v * 100) + "%" },
-            { label: "텍스처 복원 강도", value: strength, set: setStrength, min: 0, max: 100, fmt: (v) => v.toFixed(2) },
             { label: "JPEG 품질", value: quality, set: setQuality, min: 50, max: 100, fmt: (v) => Math.round(v * 100) + "%" },
           ].map((f) => (
             <div key={f.label} style={{ marginBottom: 14 }}>
