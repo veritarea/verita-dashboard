@@ -465,7 +465,7 @@ export default function WatermarkRemoverPanel() {
   const cardStyle = { background: "#161b22", border: "1px solid #21262d", borderRadius: 10, padding: 16, marginBottom: 14 };
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: 20, maxWidth: 640 }}>
+    <div style={{ flex: 1, overflowY: "auto", padding: 20, maxWidth: 640, marginLeft: "auto", marginRight: "auto", width: "100%" }}>
       <div style={{ fontSize: 12, color: "#8b949e", marginBottom: 16, lineHeight: 1.6 }}>
         소유자가 직접 올린 매물 사진에서 사이트 공통 워터마크를 지우고 JPEG로 내려받습니다. 워터마크가 항상 중앙에 있다는 전제로 같은 비율을 모든 사진에 적용해요. 처리는 브라우저 안에서만 일어나고 서버에는 저장되지 않습니다.
       </div>
