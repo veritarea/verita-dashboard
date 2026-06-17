@@ -375,10 +375,10 @@ export default function WatermarkRemoverPanel() {
   const [files, setFiles] = useState([]);
   const [calibSrc, setCalibSrc] = useState(null);
   const [calibDims, setCalibDims] = useState(null);
-  const [xPct, setXPct] = useState(0.5);
-  const [yPct, setYPct] = useState(0.5);
-  const [wPct, setWPct] = useState(0.25);
-  const [hPct, setHPct] = useState(0.12);
+  const [xPct, setXPct] = useState(0.47);
+  const [yPct, setYPct] = useState(0.485);
+  const [wPct, setWPct] = useState(0.28);
+  const [hPct, setHPct] = useState(0.06);
   const [quality, setQuality] = useState(0.92);
   const [aiMode, setAiMode] = useState(false);
   const [spaceUrl, setSpaceUrl] = useState(() => {
@@ -538,7 +538,7 @@ export default function WatermarkRemoverPanel() {
             { label: "가로 위치", value: xPct, set: setXPct, min: 0, max: 100, fmt: (v) => Math.round(v * 100) + "%" },
             { label: "세로 위치", value: yPct, set: setYPct, min: 0, max: 100, fmt: (v) => Math.round(v * 100) + "%" },
             { label: "가로 크기", value: wPct, set: setWPct, min: 5, max: 70, fmt: (v) => Math.round(v * 100) + "%" },
-            { label: "세로 크기", value: hPct, set: setHPct, min: 5, max: 70, fmt: (v) => Math.round(v * 100) + "%" },
+            { label: "세로 크기", value: hPct, set: setHPct, min: 2, max: 70, fmt: (v) => Math.round(v * 100) + "%" },
             { label: "JPEG 품질", value: quality, set: setQuality, min: 50, max: 100, fmt: (v) => Math.round(v * 100) + "%" },
           ].map((f) => (
             <div key={f.label} style={{ marginBottom: 14 }}>
