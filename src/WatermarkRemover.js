@@ -3,6 +3,12 @@ import JSZip from "jszip";
 
 // ── 픽셀 처리 유틸 (순수 함수, React 상태 없음) ──
 
+// ── 픽셀 처리 유틸 (순수 함수, React 상태 없음) ──
+
+function clampInt(min, max, v) {
+  return v < min ? min : v > max ? max : v;
+}
+
 // ── Fast Marching Method 인페인팅 (Telea, 2004 알고리즘 기반 자체 구현) ──
 
 const FMM_FAR = 1e6;
