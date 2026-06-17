@@ -146,7 +146,7 @@ function loadImage(file) {
   });
 }
 
-async function processFile(file, wPct, hPct, strength, quality) {
+async function processFile(file, xPct, yPct, wPct, hPct, strength, quality) {
   const img = await loadImage(file);
   const canvas = document.createElement("canvas");
   canvas.width = img.naturalWidth;
@@ -156,8 +156,8 @@ async function processFile(file, wPct, hPct, strength, quality) {
 
   const boxW = Math.max(2, Math.round(canvas.width * wPct));
   const boxH = Math.max(2, Math.round(canvas.height * hPct));
-  const x0 = Math.floor((canvas.width - boxW) / 2);
-  const y0 = Math.floor((canvas.height - boxH) / 2);
+  const x0 = clampInt(0, canvas.width - boxW, Math.round(canvas.width * xPct - boxW / 2));
+  const y0 = clampInt(0, canvas.height - boxH, Math.round(canvas.height * yPct - boxH / 2));
 
   inpaintWatermark(canvas, ctx, x0, y0, boxW, boxH, strength);
 
@@ -197,6 +197,8 @@ export default function WatermarkRemoverPanel() {
   const [files, setFiles] = useState([]);
   const [calibSrc, setCalibSrc] = useState(null);
   const [calibDims, setCalibDims] = useState(null);
+  const [xPct, setXPct] = useState(0.5);
+  const [yPct, setYPct] = useState(0.5);
   const [wPct, setWPct] = useState(0.25);
   const [hPct, setHPct] = useState(0.12);
   const [strength, setStrength] = useState(0.7);
@@ -224,7 +226,7 @@ export default function WatermarkRemoverPanel() {
       setProgress(`처리 중... (${i + 1}/${files.length})`);
       const file = files[i];
       try {
-        const blob = await processFile(file, wPct, hPct, strength, quality);
+        const blob = await processFile(file, xPct, yPct, wPct, hPct, strength, quality);
         const baseName = file.name.replace(/\.[^.]+$/, "");
         const r = {
           name: baseName + "_clean.jpg",
@@ -305,10 +307,19 @@ export default function WatermarkRemoverPanel() {
 
       {calibSrc && (
         <div style={cardStyle}>
-          <div style={labelStyle}>02 · 제거 영역 보정</div>
-          <div style={{ position: "relative", width: "100%", background: "#000", borderRadius: 6, overflow: "hidden", marginBottom: 16 }}>
+          <div style={labelStyle}>02 · 워터마크 위치 탭하기</div>
+          <div
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              const px = (e.clientX - rect.left) / rect.width;
+              const py = (e.clientY - rect.top) / rect.height;
+              setXPct(Math.min(1, Math.max(0, px)));
+              setYPct(Math.min(1, Math.max(0, py)));
+            }}
+            style={{ position: "relative", width: "100%", background: "#000", borderRadius: 6, overflow: "hidden", marginBottom: 8, cursor: "crosshair" }}
+          >
             <img src={calibSrc} alt="미리보기" onLoad={(e) => setCalibDims({ w: e.target.naturalWidth, h: e.target.naturalHeight })} style={{ display: "block", width: "100%", height: "auto" }} />
-            <div style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)", width: `${wPct * 100}%`, height: `${hPct * 100}%`, pointerEvents: "none" }}>
+            <div style={{ position: "absolute", left: `${xPct * 100}%`, top: `${yPct * 100}%`, transform: "translate(-50%,-50%)", width: `${wPct * 100}%`, height: `${hPct * 100}%`, pointerEvents: "none" }}>
               <div style={{ position: "absolute", bottom: "100%", left: "50%", transform: "translateX(-50%)", marginBottom: 6, fontFamily: "monospace", fontSize: 11, color: "#f48c06", background: "rgba(0,0,0,0.65)", padding: "2px 8px", borderRadius: 3, whiteSpace: "nowrap" }}>
                 {calibDims ? `${Math.round(calibDims.w * wPct)} × ${Math.round(calibDims.h * hPct)} px` : "..."}
               </div>
@@ -325,8 +336,11 @@ export default function WatermarkRemoverPanel() {
               ))}
             </div>
           </div>
+          <div style={{ fontSize: 11, color: "#6e7681", marginBottom: 16 }}>사진에서 워터마크가 있는 자리를 탭하면 박스가 그 자리로 옮겨가요. 정중앙이 아니어도 괜찮아요.</div>
 
           {[
+            { label: "가로 위치", value: xPct, set: setXPct, min: 0, max: 100, fmt: (v) => Math.round(v * 100) + "%" },
+            { label: "세로 위치", value: yPct, set: setYPct, min: 0, max: 100, fmt: (v) => Math.round(v * 100) + "%" },
             { label: "가로 크기", value: wPct, set: setWPct, min: 5, max: 70, fmt: (v) => Math.round(v * 100) + "%" },
             { label: "세로 크기", value: hPct, set: setHPct, min: 5, max: 70, fmt: (v) => Math.round(v * 100) + "%" },
             { label: "텍스처 복원 강도", value: strength, set: setStrength, min: 0, max: 100, fmt: (v) => v.toFixed(2) },
