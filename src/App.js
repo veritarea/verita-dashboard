@@ -24,6 +24,7 @@ async function sbFetch(path, opts = {}, token = null) {
   const url = `${SUPABASE_URL}/rest/v1/${path}`;
   const res = await fetch(url, {
     method: opts.method || "GET",
+    cache: "no-store",
     headers: {
       "apikey": SUPABASE_ANON,
       "Authorization": `Bearer ${token || SUPABASE_ANON}`,
