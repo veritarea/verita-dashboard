@@ -1,5 +1,4 @@
 import { useState, useRef } from "react";
-import JSZip from "jszip";
 
 // ── 픽셀 처리 유틸 (순수 함수, React 상태 없음) ──
 
@@ -444,18 +443,6 @@ export default function WatermarkRemoverPanel() {
     setProcessing(false);
   }
 
-  async function handleZip() {
-    const ok = results.filter((r) => !r.error);
-    if (ok.length === 0) return;
-    const zip = new JSZip();
-    ok.forEach((r) => zip.file(r.name, r.blob));
-    const content = await zip.generateAsync({ type: "blob" });
-    const url = URL.createObjectURL(content);
-    const a = document.createElement("a");
-    a.href = url; a.download = "watermark_removed.zip";
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  }
-
   function handleReset() {
     setFiles([]); setResults([]); setCalibSrc(null); setCalibDims(null); setProgress("");
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -479,24 +466,23 @@ export default function WatermarkRemoverPanel() {
           onDrop={(e) => {
             e.preventDefault(); setDragOver(false);
             const fl = Array.from(e.dataTransfer.files || []).filter((f) => f.type.startsWith("image/"));
-            if (fl.length) handleFiles(fl);
+            if (fl.length) handleFiles(fl.slice(0, 1));
           }}
           style={{ border: `1.5px dashed ${dragOver ? "#f48c06" : "#30363d"}`, borderRadius: 8, padding: "26px 14px", textAlign: "center", cursor: "pointer", background: dragOver ? "#1a1206" : "transparent" }}
         >
           <div style={{ fontSize: 13, fontWeight: 600, color: "#e6edf3", marginBottom: 4 }}>탭하여 사진 선택</div>
-          <div style={{ fontSize: 11, color: "#6e7681" }}>여러 장 한 번에 선택 가능 (JPEG/PNG)</div>
+          <div style={{ fontSize: 11, color: "#6e7681" }}>한 번에 한 장씩 처리됩니다 (JPEG/PNG)</div>
         </div>
         <input
           ref={fileInputRef}
           type="file"
           accept="image/*"
-          multiple
           style={{ display: "none" }}
-          onChange={(e) => handleFiles(Array.from(e.target.files || []))}
+          onChange={(e) => handleFiles(Array.from(e.target.files || []).slice(0, 1))}
         />
         {files.length > 0 && (
           <div style={{ fontFamily: "monospace", fontSize: 12, color: "#f48c06", marginTop: 10, textAlign: "center" }}>
-            {files.length}장 선택됨
+            {files[0].name}
           </div>
         )}
       </div>
@@ -600,14 +586,7 @@ export default function WatermarkRemoverPanel() {
 
       {results.length > 0 && (
         <div style={cardStyle}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-            <div style={labelStyle}>결과</div>
-            {results.some((r) => !r.error) && (
-              <button onClick={handleZip} style={{ background: "transparent", border: "1px solid #30363d", color: "#8b949e", borderRadius: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>
-                ZIP 전체 다운로드
-              </button>
-            )}
-          </div>
+          <div style={labelStyle}>결과</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 12 }}>
             {results.map((r, i) =>
               r.error ? (
