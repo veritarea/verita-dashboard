@@ -173,6 +173,24 @@ function StatsPanel({ leads, today }) {
   const acquiredCount = leads.filter(l=>l.status==="acquired").length;
   const todayCount = leads.filter(l=>l.collected_at?.startsWith(today)).length;
 
+  // 최근 7일 물건확보 현황 (acquired_at 기준)
+  const acquiredDays = [];
+  for (let i=6;i>=0;i--) {
+    const d = new Date();
+    d.setDate(d.getDate()-i);
+    const key = d.toISOString().slice(0,10);
+    const label = d.toLocaleDateString('ko-KR',{month:'numeric',day:'numeric'});
+    const dayLeads = leads.filter(l=>l.status==="acquired" && l.acquired_at?.startsWith(key));
+    acquiredDays.push({ key, label, count: dayLeads.length, leads: dayLeads });
+  }
+  const maxAcquiredDayCount = Math.max(...acquiredDays.map(d=>d.count), 1);
+  const acquiredWeekTotal = acquiredDays.reduce((s,d)=>s+d.count,0);
+  const acquiredWeekByAssignee = {};
+  acquiredDays.forEach(d=>d.leads.forEach(l=>{
+    if (l.assigned_to) acquiredWeekByAssignee[l.assigned_to] = (acquiredWeekByAssignee[l.assigned_to]||0)+1;
+  }));
+  const acquiredWeekAssigneeList = Object.entries(acquiredWeekByAssignee).sort((a,b)=>b[1]-a[1]);
+
   return (
     <div style={{ flex:1, overflowY:"auto", padding:"20px 24px", height:"calc(100vh - 52px)", boxSizing:"border-box" }}>
       {/* 상단 요약 카드 */}
@@ -233,6 +251,34 @@ function StatsPanel({ leads, today }) {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* 최근 7일 물건확보 현황 */}
+      <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:18, marginTop:16 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:16 }}>
+          <div style={{ fontSize:13, fontWeight:700 }}>🏠 최근 7일 물건확보 현황</div>
+          <div style={{ fontSize:12, color:"#a78bfa", fontWeight:700 }}>총 {acquiredWeekTotal}건</div>
+        </div>
+        <div style={{ display:"flex", alignItems:"flex-end", gap:10, height:120, marginBottom:18 }}>
+          {acquiredDays.map(d=>(
+            <div key={d.key} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:6 }}>
+              <div style={{ fontSize:11, color:"#e6edf3", fontWeight:700 }}>{d.count}</div>
+              <div style={{ width:"100%", background:"linear-gradient(180deg,#a78bfa,#7c3aed)", borderRadius:"4px 4px 0 0", height:`${Math.max((d.count/maxAcquiredDayCount)*90,d.count>0?6:2)}px`, transition:"height 0.3s" }}/>
+              <div style={{ fontSize:10, color:"#6e7681" }}>{d.label}</div>
+            </div>
+          ))}
+        </div>
+        {acquiredWeekAssigneeList.length>0 && (
+          <div style={{ borderTop:"1px solid #21262d", paddingTop:14 }}>
+            <div style={{ fontSize:11, color:"#6e7681", marginBottom:10, fontWeight:600 }}>담당자별 (이번 주)</div>
+            {acquiredWeekAssigneeList.map(([name,count])=>(
+              <BarRow key={name} label={name} count={count} total={acquiredWeekTotal||1} color="#a78bfa"/>
+            ))}
+          </div>
+        )}
+        {acquiredWeekTotal===0 && (
+          <div style={{ fontSize:12, color:"#6e7681" }}>최근 7일 내 새로 확보된 매물이 없습니다.</div>
+        )}
       </div>
     </div>
   );
@@ -577,8 +623,8 @@ function Dashboard({ user, onLogout, onAdmin }) {
     }
     try {
       const patch = { status: newStatus };
-      if (newStatus === "acquired") patch.assigned_to = user.name;
-      if (selected.status === "acquired" && newStatus !== "acquired") patch.assigned_to = null;
+      if (newStatus === "acquired") { patch.assigned_to = user.name; patch.acquired_at = new Date().toISOString(); }
+      if (selected.status === "acquired" && newStatus !== "acquired") { patch.assigned_to = null; patch.acquired_at = null; }
       await sbFetch(`property_leads?id=eq.${selected.id}`, { method:"PATCH", body:JSON.stringify(patch) }, user.token);
       setLeads(p=>p.map(l=>l.id===selected.id?{...l,...patch}:l));
       setSelected(p=>({...p,...patch}));
