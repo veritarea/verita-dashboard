@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import WatermarkRemoverPanel from "./WatermarkRemover";
 
 const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
 const SUPABASE_ANON = process.env.REACT_APP_SUPABASE_ANON;
@@ -483,6 +482,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
   const [srcFilter, setSrcFilter] = useState("all");
   const [areaFilter, setAreaFilter] = useState("all");
   const [phoneFilter, setPhoneFilter] = useState("all");
+  const [assigneeFilter, setAssigneeFilter] = useState("all");
   const [search, setSearch]       = useState("");
   const [selected, setSelected]   = useState(null);
   const [note, setNote]           = useState("");
@@ -507,16 +507,17 @@ function Dashboard({ user, onLogout, onAdmin }) {
   const AREAS = [
     ["제주시", "제주시"],
     ["서귀포시", "서귀포시"],
-    ["노형동", "노형동"],
-    ["연동", "연동"],
+    ["노형동|연동", "노형동·연동"],
   ];
 
   const filtered = leads.filter(l => {
     if (filter !== "all" && l.status !== filter) return false;
+    if (filter === "acquired" && assigneeFilter !== "all" && l.assigned_to !== assigneeFilter) return false;
     if (srcFilter !== "all" && l.source !== srcFilter) return false;
     if (areaFilter !== "all") {
       const addr = (l.address_jibun || l.address_raw || "");
-      if (!addr.includes(areaFilter)) return false;
+      const keywords = areaFilter.split("|");
+      if (!keywords.some(k => addr.includes(k))) return false;
     }
     if (phoneFilter === "has" && !l.phone) return false;
     if (search) {
@@ -529,6 +530,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
 
   const counts = Object.fromEntries(Object.keys(STATUS_CONFIG).map(s=>[s,leads.filter(l=>l.status===s).length]));
   const todayCount = leads.filter(l=>l.collected_at?.startsWith(today)).length;
+  const acquiredAssignees = Array.from(new Set(leads.filter(l=>l.status==="acquired" && l.assigned_to).map(l=>l.assigned_to)));
 
   async function updateStatus(newStatus) {
     // 다른 사람이 물건확보한 경우 차단 (관리자 제외)
@@ -576,7 +578,6 @@ function Dashboard({ user, onLogout, onAdmin }) {
           <div style={{ display:"flex", gap:4, marginLeft:8 }}>
             <button onClick={()=>setView("list")} style={{ background:view==="list"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="list"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="list"?700:400 }}>📋 매물목록</button>
             <button onClick={()=>setView("stats")} style={{ background:view==="stats"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="stats"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="stats"?700:400 }}>📊 통계</button>
-<button onClick={()=>setView("watermark")} style={{ background:view==="watermark"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="watermark"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="watermark"?700:400 }}>🧹 워터마크 제거</button>
           </div>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -599,17 +600,27 @@ function Dashboard({ user, onLogout, onAdmin }) {
 
       {view === "stats" ? (
         <StatsPanel leads={leads} today={today} />
-               ) : view === "watermark" ? (
-              <WatermarkRemoverPanel />
       ) : (
       <div style={{ display:"flex", height:"calc(100vh - 52px)" }}>
         <div style={{ width:148, background:"#161b22", borderRight:"1px solid #21262d", padding:"14px 0", flexShrink:0, overflowY:"auto" }}>
           <div style={{ padding:"0 12px 8px", fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px" }}>상태</div>
           {[["all","전체",leads.length],...Object.entries(STATUS_CONFIG).map(([k,v])=>[k,v.label,counts[k]])].map(([key,label,count])=>(
-            <button key={key} onClick={()=>setFilter(key)} style={{ width:"100%", textAlign:"left", padding:"7px 12px", background:filter===key?"#21262d":"transparent", border:"none", color:filter===key?"#e6edf3":"#8b949e", fontSize:12, cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-              <span>{label}</span>
-              <span style={{ fontSize:10, background:filter===key?"#30363d":"transparent", padding:"1px 6px", borderRadius:8, color:filter===key?"#e6edf3":"#6e7681" }}>{count}</span>
-            </button>
+            <div key={key}>
+              <button onClick={()=>{ setFilter(key); if(key!=="acquired") setAssigneeFilter("all"); }} style={{ width:"100%", textAlign:"left", padding:"7px 12px", background:filter===key?"#21262d":"transparent", border:"none", color:filter===key?"#e6edf3":"#8b949e", fontSize:12, cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                <span>{label}</span>
+                <span style={{ fontSize:10, background:filter===key?"#30363d":"transparent", padding:"1px 6px", borderRadius:8, color:filter===key?"#e6edf3":"#6e7681" }}>{count}</span>
+              </button>
+              {key==="acquired" && filter==="acquired" && acquiredAssignees.length>0 && (
+                <div style={{ paddingLeft:10 }}>
+                  {[["all","전체",counts.acquired],...acquiredAssignees.map(name=>[name,name,leads.filter(l=>l.status==="acquired"&&l.assigned_to===name).length])].map(([akey,alabel,acount])=>(
+                    <button key={akey} onClick={()=>setAssigneeFilter(akey)} style={{ width:"100%", textAlign:"left", padding:"5px 12px", background:assigneeFilter===akey?"#262c36":"transparent", border:"none", borderLeft:assigneeFilter===akey?"2px solid #a78bfa":"2px solid transparent", color:assigneeFilter===akey?"#e6edf3":"#6e7681", fontSize:11, cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                      <span>{akey==="all"?"전체":"🔒 "+alabel}</span>
+                      <span style={{ fontSize:9, color:"#6e7681" }}>{acount}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           ))}
           <div style={{ margin:"12px 12px 8px", height:1, background:"#21262d" }}/>
           <div style={{ padding:"0 12px 8px", fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px" }}>소스</div>
