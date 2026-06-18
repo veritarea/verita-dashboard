@@ -21,7 +21,26 @@ const STATUS_CONFIG = {
   duplicate: { label: "중복",    color: "#9ca3af", bg: "#111" },
 };
 
-async function sbFetch(path, opts = {}, token = null) {
+async function refreshSupabaseToken() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("verita_user"));
+    if (!saved?.refresh_token) return null;
+    const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+      method: "POST",
+      headers: { "apikey": SUPABASE_ANON, "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: saved.refresh_token }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const updated = { ...saved, token: data.access_token, refresh_token: data.refresh_token };
+    localStorage.setItem("verita_user", JSON.stringify(updated));
+    return updated.token;
+  } catch {
+    return null;
+  }
+}
+
+async function sbFetch(path, opts = {}, token = null, _retried = false) {
   const url = `${SUPABASE_URL}/rest/v1/${path}`;
   const res = await fetch(url, {
     method: opts.method || "GET",
@@ -34,7 +53,15 @@ async function sbFetch(path, opts = {}, token = null) {
     },
     body: opts.body,
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    const errText = await res.text();
+    // JWT 만료 시 한 번 갱신 후 재시도 (50분 주기 갱신이 백그라운드 탭에서 늦게 도는 경우 대비)
+    if (!_retried && token && errText.includes("PGRST303")) {
+      const newToken = await refreshSupabaseToken();
+      if (newToken) return sbFetch(path, opts, newToken, true);
+    }
+    throw new Error(errText);
+  }
   const t = await res.text();
   return t ? JSON.parse(t) : [];
 }
@@ -709,31 +736,19 @@ export default function App() {
   const [user, setUser] = useState(() => { try { return JSON.parse(localStorage.getItem("verita_user")); } catch { return null; } });
   const [page, setPage] = useState("dashboard");
 
-  // 토큰 만료 감지 (1시간마다 체크)
+  // 토큰 만료 감지 (50분마다 + 로그인 직후 바로 1회)
   useEffect(() => {
     if (!user) return;
-    async function refreshToken() {
-      try {
-        const saved = JSON.parse(localStorage.getItem("verita_user"));
-        if (!saved?.refresh_token) return;
-        const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
-          method: "POST",
-          headers: { "apikey": SUPABASE_ANON, "Content-Type": "application/json" },
-          body: JSON.stringify({ refresh_token: saved.refresh_token }),
-        });
-        if (!res.ok) { handleLogout(); return; }
-        const data = await res.json();
-        const updated = { ...saved, token: data.access_token, refresh_token: data.refresh_token };
-        localStorage.setItem("verita_user", JSON.stringify(updated));
-        setUser(updated);
-      } catch {
-        handleLogout();
-      }
+    async function tick() {
+      const newToken = await refreshSupabaseToken();
+      if (!newToken) { handleLogout(); return; }
+      const saved = JSON.parse(localStorage.getItem("verita_user"));
+      setUser(saved);
     }
-    refreshToken();
-    const interval = setInterval(refreshToken, 50 * 60 * 1000); // 50분마다
+    tick();
+    const interval = setInterval(tick, 50 * 60 * 1000); // 50분마다
     return () => clearInterval(interval);
-  }, []);
+  }, [!!user]);
 
   function handleLogin(userData) {
     localStorage.setItem("verita_user", JSON.stringify(userData));
