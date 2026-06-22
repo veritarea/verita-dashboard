@@ -290,6 +290,11 @@ function BriefingPanel({ user, leads }) {
     grouped[d].push(b);
   });
 
+  // 오늘 이후(현재 포함) vs 지난 일정 분리
+  const upcomingDates = Object.keys(grouped).filter(d => d >= today).sort();
+  const pastDates = Object.keys(grouped).filter(d => d < today).sort().reverse(); // 최근 것부터
+  const [showPast, setShowPast] = useState(false);
+
   const formatTime = (dt) => {
     if (!dt) return "";
     const d = new Date(dt);
@@ -391,20 +396,22 @@ function BriefingPanel({ user, leads }) {
         </div>
       )}
 
-      {/* 날짜별 브리핑 목록 */}
-      {Object.keys(grouped).sort().map(date => (
+      {/* 예정 브리핑 */}
+      {upcomingDates.length === 0 && !showForm && (
+        <div style={{ textAlign:"center", padding:"40px 0 20px", color:"#6e7681", fontSize:13 }}>
+          <div style={{ fontSize:32, marginBottom:12 }}>📋</div>
+          예정된 브리핑이 없습니다
+        </div>
+      )}
+      {upcomingDates.map(date => (
         <div key={date} style={{ marginBottom:24 }}>
-          {/* 날짜 헤더 */}
           <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10, padding:"6px 10px", background:"#161b22", borderRadius:8, border:"1px solid #21262d" }}>
             <span style={{ fontSize:13, fontWeight:700, color:"#f48c06" }}>{formatDate(date)}</span>
             <span style={{ fontSize:11, color:"#6e7681" }}>{grouped[date].length}건</span>
           </div>
-
           <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
             {grouped[date].map(b => (
               <div key={b.id} style={{ background:"#161b22", border:"1px solid #21262d", borderLeft:`4px solid ${statusColor[b.status]||"#30363d"}`, borderRadius:10, overflow:"hidden", opacity:b.status==="cancelled"?0.5:1 }}>
-
-                {/* 카드 상단: 시간 + 상태 + 담당자 + 버튼 */}
                 <div style={{ padding:"12px 14px", display:"flex", justifyContent:"space-between", alignItems:"center", borderBottom:"1px solid #21262d" }}>
                   <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
                     <div style={{ fontSize:20, fontWeight:800, color:"#e6edf3", letterSpacing:"-0.5px" }}>{formatTime(b.scheduled_at)}</div>
@@ -415,33 +422,24 @@ function BriefingPanel({ user, leads }) {
                     <div style={{ display:"flex", gap:5, flexShrink:0 }}>
                       {b.status==="scheduled" && (
                         <>
-                          <button onClick={()=>{ setResultModal(b); setResultText(b.result||""); }}
-                            style={{ background:"#22c55e22", color:"#22c55e", border:"1px solid #22c55e44", borderRadius:6, padding:"5px 10px", fontSize:11, cursor:"pointer", fontWeight:700 }}>완료</button>
-                          <button onClick={()=>handleStatus(b.id,"cancelled")}
-                            style={{ background:"transparent", color:"#6e7681", border:"1px solid #30363d", borderRadius:6, padding:"5px 10px", fontSize:11, cursor:"pointer" }}>취소</button>
+                          <button onClick={()=>{ setResultModal(b); setResultText(b.result||""); }} style={{ background:"#22c55e22", color:"#22c55e", border:"1px solid #22c55e44", borderRadius:6, padding:"5px 10px", fontSize:11, cursor:"pointer", fontWeight:700 }}>완료</button>
+                          <button onClick={()=>handleStatus(b.id,"cancelled")} style={{ background:"transparent", color:"#6e7681", border:"1px solid #30363d", borderRadius:6, padding:"5px 10px", fontSize:11, cursor:"pointer" }}>취소</button>
                         </>
                       )}
                       {user.isAdmin && (
                         <>
-                          <button onClick={()=>{ setEditItem(b); const kst = b.scheduled_at ? new Date(new Date(b.scheduled_at).getTime() + 9*60*60*1000).toISOString().slice(0,16) : ""; setForm({scheduled_at:kst, address:b.address||"", price:b.price||"", maintenance_fee:b.maintenance_fee||"", available_date:b.available_date||"", door_password:b.door_password||"", assigned_to:b.assigned_to||"", note:b.note||"", lead_id:b.lead_id||""}); setShowForm(true); }}
-                            style={{ background:"transparent", color:"#8b949e", border:"1px solid #30363d", borderRadius:6, padding:"5px 10px", fontSize:11, cursor:"pointer" }}>수정</button>
-                          <button onClick={()=>handleDelete(b.id)}
-                            style={{ background:"transparent", color:"#ef4444", border:"1px solid #ef444422", borderRadius:6, padding:"5px 10px", fontSize:11, cursor:"pointer" }}>삭제</button>
+                          <button onClick={()=>{ setEditItem(b); const kst = b.scheduled_at ? new Date(new Date(b.scheduled_at).getTime() + 9*60*60*1000).toISOString().slice(0,16) : ""; setForm({scheduled_at:kst, address:b.address||"", price:b.price||"", maintenance_fee:b.maintenance_fee||"", available_date:b.available_date||"", door_password:b.door_password||"", assigned_to:b.assigned_to||"", note:b.note||"", lead_id:b.lead_id||""}); setShowForm(true); }} style={{ background:"transparent", color:"#8b949e", border:"1px solid #30363d", borderRadius:6, padding:"5px 10px", fontSize:11, cursor:"pointer" }}>수정</button>
+                          <button onClick={()=>handleDelete(b.id)} style={{ background:"transparent", color:"#ef4444", border:"1px solid #ef444422", borderRadius:6, padding:"5px 10px", fontSize:11, cursor:"pointer" }}>삭제</button>
                         </>
                       )}
                     </div>
                   )}
                 </div>
-
-                {/* 카드 본문: 정보 그리드 */}
                 <div style={{ padding:"12px 14px" }}>
-                  {/* 주소 - 전체 너비 */}
                   <div style={{ marginBottom:10 }}>
                     <div style={{ fontSize:10, color:"#6e7681", marginBottom:3 }}>📍 주소</div>
                     <div style={{ fontSize:13, color:"#e6edf3", fontWeight:600, lineHeight:1.4 }}>{b.address}</div>
                   </div>
-
-                  {/* 금액/관리비/입주가능일/비밀번호 */}
                   <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
                     {b.price && (
                       <div style={{ background:"#0d1117", borderRadius:6, padding:"8px 10px" }}>
@@ -468,17 +466,8 @@ function BriefingPanel({ user, leads }) {
                       </div>
                     </div>
                   </div>
-
-                  {b.note && (
-                    <div style={{ marginTop:8, background:"#0d1117", borderRadius:6, padding:"8px 10px", fontSize:12, color:"#8b949e", lineHeight:1.5 }}>
-                      💬 {b.note}
-                    </div>
-                  )}
-                  {b.result && (
-                    <div style={{ marginTop:8, background:"#052e16", border:"1px solid #16a34a22", borderRadius:6, padding:"8px 10px", fontSize:12, color:"#22c55e", lineHeight:1.5 }}>
-                      ✅ {b.result}
-                    </div>
-                  )}
+                  {b.note && <div style={{ marginTop:8, background:"#0d1117", borderRadius:6, padding:"8px 10px", fontSize:12, color:"#8b949e", lineHeight:1.5 }}>💬 {b.note}</div>}
+                  {b.result && <div style={{ marginTop:8, background:"#052e16", border:"1px solid #16a34a22", borderRadius:6, padding:"8px 10px", fontSize:12, color:"#22c55e", lineHeight:1.5 }}>✅ {b.result}</div>}
                 </div>
               </div>
             ))}
@@ -486,10 +475,44 @@ function BriefingPanel({ user, leads }) {
         </div>
       ))}
 
-      {briefings.length === 0 && !loading && (
-        <div style={{ textAlign:"center", padding:"60px 0", color:"#6e7681", fontSize:13 }}>
-          <div style={{ fontSize:32, marginBottom:12 }}>📋</div>
-          등록된 브리핑 일정이 없습니다
+      {/* 지난 브리핑 토글 */}
+      {pastDates.length > 0 && (
+        <div style={{ marginTop:8 }}>
+          <button onClick={()=>setShowPast(p=>!p)} style={{ width:"100%", background:"#161b22", border:"1px solid #21262d", borderRadius:8, padding:"10px 14px", color:"#6e7681", fontSize:12, cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <span>🗂 지난 브리핑 ({pastDates.reduce((s,d)=>s+grouped[d].length,0)}건)</span>
+            <span>{showPast ? "▲ 접기" : "▼ 펼치기"}</span>
+          </button>
+          {showPast && (
+            <div style={{ marginTop:10 }}>
+              {pastDates.map(date => (
+                <div key={date} style={{ marginBottom:16 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8, padding:"5px 10px", background:"#0d1117", borderRadius:6, border:"1px solid #21262d" }}>
+                    <span style={{ fontSize:12, fontWeight:600, color:"#6e7681" }}>{formatDate(date)}</span>
+                    <span style={{ fontSize:11, color:"#30363d" }}>{grouped[date].length}건</span>
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                    {grouped[date].map(b => (
+                      <div key={b.id} style={{ background:"#0d1117", border:"1px solid #21262d", borderLeft:`3px solid ${statusColor[b.status]||"#30363d"}`, borderRadius:8, padding:"10px 12px", opacity:0.7 }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                            <span style={{ fontSize:14, fontWeight:700, color:"#8b949e" }}>{formatTime(b.scheduled_at)}</span>
+                            <span style={{ fontSize:10, background:statusColor[b.status]+"22", color:statusColor[b.status], padding:"2px 6px", borderRadius:8, fontWeight:600 }}>{statusLabel[b.status]}</span>
+                            {b.assigned_to && <span style={{ fontSize:11, color:"#6e7681" }}>👤 {b.assigned_to}</span>}
+                          </div>
+                          {user.isAdmin && (
+                            <button onClick={()=>handleDelete(b.id)} style={{ background:"transparent", color:"#ef4444", border:"none", fontSize:11, cursor:"pointer" }}>삭제</button>
+                          )}
+                        </div>
+                        <div style={{ fontSize:12, color:"#6e7681", marginBottom:4 }}>📍 {b.address}</div>
+                        {b.price && <span style={{ fontSize:11, color:"#8b949e", marginRight:8 }}>💰 {b.price}</span>}
+                        {b.result && <div style={{ marginTop:6, fontSize:11, color:"#22c55e" }}>✅ {b.result}</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
