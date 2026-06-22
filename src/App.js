@@ -492,7 +492,7 @@ function LoginPage({ onLogin }) {
       const data = await sbAuth("token?grant_type=password", email, password);
       const allowed = await sbFetch(`allowed_users?email=eq.${encodeURIComponent(email)}&select=email,name`);
       if (!allowed || allowed.length === 0) throw new Error("접근 권한이 없습니다. 관리자에게 문의하세요.");
-      onLogin({ token: data.access_token, refresh_token: data.refresh_token, email, name: allowed[0].name || email.split("@")[0], isAdmin: ADMIN_EMAILS.includes(email.trim())
+      onLogin({ token: data.access_token, refresh_token: data.refresh_token, email, name: allowed[0].name || email.split("@")[0], isAdmin: ADMIN_EMAILS.includes(email.trim()) });
     } catch(e) {
       setError(e.message);
     } finally {
