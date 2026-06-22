@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import WatermarkRemoverPanel from "./WatermarkRemover";
 
 const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
 const SUPABASE_ANON = process.env.REACT_APP_SUPABASE_ANON;
@@ -21,26 +20,7 @@ const STATUS_CONFIG = {
   duplicate: { label: "중복",    color: "#9ca3af", bg: "#111" },
 };
 
-async function refreshSupabaseToken() {
-  try {
-    const saved = JSON.parse(localStorage.getItem("verita_user"));
-    if (!saved?.refresh_token) return null;
-    const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
-      method: "POST",
-      headers: { "apikey": SUPABASE_ANON, "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: saved.refresh_token }),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const updated = { ...saved, token: data.access_token, refresh_token: data.refresh_token };
-    localStorage.setItem("verita_user", JSON.stringify(updated));
-    return updated.token;
-  } catch {
-    return null;
-  }
-}
-
-async function sbFetch(path, opts = {}, token = null, _retried = false) {
+async function sbFetch(path, opts = {}, token = null) {
   const url = `${SUPABASE_URL}/rest/v1/${path}`;
   const res = await fetch(url, {
     method: opts.method || "GET",
@@ -53,15 +33,7 @@ async function sbFetch(path, opts = {}, token = null, _retried = false) {
     },
     body: opts.body,
   });
-  if (!res.ok) {
-    const errText = await res.text();
-    // JWT 만료 시 한 번 갱신 후 재시도 (50분 주기 갱신이 백그라운드 탭에서 늦게 도는 경우 대비)
-    if (!_retried && token && errText.includes("PGRST303")) {
-      const newToken = await refreshSupabaseToken();
-      if (newToken) return sbFetch(path, opts, newToken, true);
-    }
-    throw new Error(errText);
-  }
+  if (!res.ok) throw new Error(await res.text());
   const t = await res.text();
   return t ? JSON.parse(t) : [];
 }
@@ -173,24 +145,6 @@ function StatsPanel({ leads, today }) {
   const acquiredCount = leads.filter(l=>l.status==="acquired").length;
   const todayCount = leads.filter(l=>l.collected_at?.startsWith(today)).length;
 
-  // 최근 7일 물건확보 현황 (acquired_at 기준)
-  const acquiredDays = [];
-  for (let i=6;i>=0;i--) {
-    const d = new Date();
-    d.setDate(d.getDate()-i);
-    const key = d.toISOString().slice(0,10);
-    const label = d.toLocaleDateString('ko-KR',{month:'numeric',day:'numeric'});
-    const dayLeads = leads.filter(l=>l.status==="acquired" && l.acquired_at?.startsWith(key));
-    acquiredDays.push({ key, label, count: dayLeads.length, leads: dayLeads });
-  }
-  const maxAcquiredDayCount = Math.max(...acquiredDays.map(d=>d.count), 1);
-  const acquiredWeekTotal = acquiredDays.reduce((s,d)=>s+d.count,0);
-  const acquiredWeekByAssignee = {};
-  acquiredDays.forEach(d=>d.leads.forEach(l=>{
-    if (l.assigned_to) acquiredWeekByAssignee[l.assigned_to] = (acquiredWeekByAssignee[l.assigned_to]||0)+1;
-  }));
-  const acquiredWeekAssigneeList = Object.entries(acquiredWeekByAssignee).sort((a,b)=>b[1]-a[1]);
-
   return (
     <div style={{ flex:1, overflowY:"auto", padding:"20px 24px", height:"calc(100vh - 52px)", boxSizing:"border-box" }}>
       {/* 상단 요약 카드 */}
@@ -252,34 +206,274 @@ function StatsPanel({ leads, today }) {
           ))}
         </div>
       </div>
+    </div>
+  );
+}
 
-      {/* 최근 7일 물건확보 현황 */}
-      <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:18, marginTop:16 }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:16 }}>
-          <div style={{ fontSize:13, fontWeight:700 }}>🏠 최근 7일 물건확보 현황</div>
-          <div style={{ fontSize:12, color:"#a78bfa", fontWeight:700 }}>총 {acquiredWeekTotal}건</div>
+// ── 브리핑 패널 ──
+function BriefingPanel({ user, leads }) {
+  const [briefings, setBriefings] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [resultModal, setResultModal] = useState(null);
+  const [resultText, setResultText] = useState("");
+  const [form, setForm] = useState({
+    scheduled_at:"", address:"", price:"", maintenance_fee:"",
+    available_date:"", door_password:"", assigned_to:"", note:"", lead_id:""
+  });
+
+  const today = new Date().toISOString().slice(0,10);
+
+  const loadBriefings = async () => {
+    setLoading(true);
+    try {
+      const data = await sbFetch("briefings?select=*&order=scheduled_at.asc", {}, user.token);
+      setBriefings(Array.isArray(data) ? data : []);
+    } catch(e) { console.error(e); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadBriefings(); }, []);
+
+  const handleLeadSelect = (e) => {
+    const lead = leads.find(l=>l.id===e.target.value);
+    if (lead) {
+      setForm(f=>({ ...f, lead_id:lead.id, address:lead.address_raw||"", price:lead.price||"" }));
+    } else {
+      setForm(f=>({ ...f, lead_id:"" }));
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!form.scheduled_at || !form.address) return alert("일시와 주소는 필수입니다.");
+    try {
+      if (editItem) {
+        await sbFetch(`briefings?id=eq.${editItem.id}`, { method:"PATCH", body:JSON.stringify({...form, created_by:user.name}) }, user.token);
+      } else {
+        await sbFetch("briefings", { method:"POST", body:JSON.stringify({...form, created_by:user.name, status:"scheduled"}) }, user.token);
+      }
+      setShowForm(false); setEditItem(null);
+      setForm({ scheduled_at:"", address:"", price:"", maintenance_fee:"", available_date:"", door_password:"", assigned_to:"", note:"", lead_id:"" });
+      loadBriefings();
+    } catch(e) { alert("저장 오류: "+e.message); }
+  };
+
+  const handleStatus = async (id, status) => {
+    await sbFetch(`briefings?id=eq.${id}`, { method:"PATCH", body:JSON.stringify({status}) }, user.token);
+    loadBriefings();
+  };
+
+  const handleResult = async () => {
+    await sbFetch(`briefings?id=eq.${resultModal.id}`, { method:"PATCH", body:JSON.stringify({result:resultText, status:"done"}) }, user.token);
+    setResultModal(null); setResultText("");
+    loadBriefings();
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("삭제하시겠습니까?")) return;
+    await sbFetch(`briefings?id=eq.${id}`, { method:"DELETE" }, user.token);
+    loadBriefings();
+  };
+
+  const canSeePw = (b) => user.isAdmin || b.assigned_to === user.name;
+
+  // 날짜별 그룹핑
+  const grouped = {};
+  briefings.forEach(b => {
+    const d = b.scheduled_at?.slice(0,10) || "미정";
+    if (!grouped[d]) grouped[d] = [];
+    grouped[d].push(b);
+  });
+
+  const formatTime = (dt) => {
+    if (!dt) return "";
+    const d = new Date(dt);
+    return d.toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit', hour12:true });
+  };
+
+  const formatDate = (d) => {
+    if (!d) return "미정";
+    const dt = new Date(d+"T00:00:00");
+    const diff = Math.round((dt - new Date(today+"T00:00:00")) / 86400000);
+    const label = diff===0?"오늘":diff===1?"내일":diff===-1?"어제":"";
+    return dt.toLocaleDateString('ko-KR',{month:'long',day:'numeric',weekday:'short'}) + (label?" ("+label+")":"");
+  };
+
+  const statusColor = { scheduled:"#3b82f6", done:"#22c55e", cancelled:"#6e7681" };
+  const statusLabel = { scheduled:"예정", done:"완료", cancelled:"취소" };
+
+  return (
+    <div style={{ flex:1, overflowY:"auto", padding:"20px 24px", height:"calc(100vh - 52px)", boxSizing:"border-box" }}>
+      {/* 상단 헤더 */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+        <div>
+          <div style={{ fontSize:16, fontWeight:700 }}>📅 브리핑 일정</div>
+          <div style={{ fontSize:12, color:"#6e7681", marginTop:2 }}>총 {briefings.filter(b=>b.status==="scheduled").length}건 예정</div>
         </div>
-        <div style={{ display:"flex", alignItems:"flex-end", gap:10, height:120, marginBottom:18 }}>
-          {acquiredDays.map(d=>(
-            <div key={d.key} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:6 }}>
-              <div style={{ fontSize:11, color:"#e6edf3", fontWeight:700 }}>{d.count}</div>
-              <div style={{ width:"100%", background:"linear-gradient(180deg,#a78bfa,#7c3aed)", borderRadius:"4px 4px 0 0", height:`${Math.max((d.count/maxAcquiredDayCount)*90,d.count>0?6:2)}px`, transition:"height 0.3s" }}/>
-              <div style={{ fontSize:10, color:"#6e7681" }}>{d.label}</div>
-            </div>
-          ))}
-        </div>
-        {acquiredWeekAssigneeList.length>0 && (
-          <div style={{ borderTop:"1px solid #21262d", paddingTop:14 }}>
-            <div style={{ fontSize:11, color:"#6e7681", marginBottom:10, fontWeight:600 }}>담당자별 (이번 주)</div>
-            {acquiredWeekAssigneeList.map(([name,count])=>(
-              <BarRow key={name} label={name} count={count} total={acquiredWeekTotal||1} color="#a78bfa"/>
-            ))}
-          </div>
-        )}
-        {acquiredWeekTotal===0 && (
-          <div style={{ fontSize:12, color:"#6e7681" }}>최근 7일 내 새로 확보된 매물이 없습니다.</div>
+        {user.isAdmin && (
+          <button onClick={()=>{ setShowForm(true); setEditItem(null); setForm({ scheduled_at:"", address:"", price:"", maintenance_fee:"", available_date:"", door_password:"", assigned_to:"", note:"", lead_id:"" }); }} style={{ background:"linear-gradient(135deg,#e85d04,#f48c06)", color:"#fff", border:"none", borderRadius:8, padding:"8px 16px", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+            + 브리핑 등록
+          </button>
         )}
       </div>
+
+      {/* 등록/수정 폼 */}
+      {showForm && (
+        <div style={{ background:"#161b22", border:"1px solid #30363d", borderRadius:12, padding:20, marginBottom:20 }}>
+          <div style={{ fontSize:14, fontWeight:700, marginBottom:16 }}>{editItem?"브리핑 수정":"브리핑 등록"}</div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+            <div>
+              <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>일시 *</div>
+              <input type="datetime-local" value={form.scheduled_at} onChange={e=>setForm(f=>({...f,scheduled_at:e.target.value}))} style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"7px 10px", color:"#e6edf3", fontSize:13 }}/>
+            </div>
+            <div>
+              <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>담당 직원</div>
+              <input value={form.assigned_to} onChange={e=>setForm(f=>({...f,assigned_to:e.target.value}))} placeholder="이름 입력" style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"7px 10px", color:"#e6edf3", fontSize:13 }}/>
+            </div>
+            <div style={{ gridColumn:"1/-1" }}>
+              <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>수집 매물에서 선택 (선택사항)</div>
+              <select onChange={handleLeadSelect} style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"7px 10px", color:"#e6edf3", fontSize:13 }}>
+                <option value="">직접 입력</option>
+                {leads.filter(l=>l.address_raw).map(l=>(
+                  <option key={l.id} value={l.id}>{l.address_raw?.slice(0,40)} {l.price?"| "+l.price:""}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ gridColumn:"1/-1" }}>
+              <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>주소 *</div>
+              <input value={form.address} onChange={e=>setForm(f=>({...f,address:e.target.value}))} placeholder="주소 입력" style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"7px 10px", color:"#e6edf3", fontSize:13 }}/>
+            </div>
+            <div>
+              <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>금액</div>
+              <input value={form.price} onChange={e=>setForm(f=>({...f,price:e.target.value}))} placeholder="예: 보증금 500/월세 45" style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"7px 10px", color:"#e6edf3", fontSize:13 }}/>
+            </div>
+            <div>
+              <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>관리비</div>
+              <input value={form.maintenance_fee} onChange={e=>setForm(f=>({...f,maintenance_fee:e.target.value}))} placeholder="예: 5만원 (인터넷 포함)" style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"7px 10px", color:"#e6edf3", fontSize:13 }}/>
+            </div>
+            <div>
+              <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>입주가능일</div>
+              <input value={form.available_date} onChange={e=>setForm(f=>({...f,available_date:e.target.value}))} placeholder="예: 즉시입주 / 2026.07.01" style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"7px 10px", color:"#e6edf3", fontSize:13 }}/>
+            </div>
+            <div>
+              <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>🔐 비밀번호</div>
+              <input value={form.door_password} onChange={e=>setForm(f=>({...f,door_password:e.target.value}))} placeholder="도어락 비밀번호" style={{ width:"100%", background:"#0d1117", border:"1px solid #f48c06", borderRadius:6, padding:"7px 10px", color:"#f48c06", fontSize:13 }}/>
+            </div>
+            <div style={{ gridColumn:"1/-1" }}>
+              <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>추가 메모</div>
+              <textarea value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))} rows={2} placeholder="특이사항, 주차 안내 등" style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"7px 10px", color:"#e6edf3", fontSize:13, resize:"vertical" }}/>
+            </div>
+          </div>
+          <div style={{ display:"flex", gap:8, marginTop:14 }}>
+            <button onClick={handleSubmit} style={{ background:"linear-gradient(135deg,#e85d04,#f48c06)", color:"#fff", border:"none", borderRadius:6, padding:"8px 18px", fontSize:13, fontWeight:700, cursor:"pointer" }}>저장</button>
+            <button onClick={()=>{ setShowForm(false); setEditItem(null); }} style={{ background:"transparent", border:"1px solid #30363d", color:"#8b949e", borderRadius:6, padding:"8px 14px", fontSize:13, cursor:"pointer" }}>취소</button>
+          </div>
+        </div>
+      )}
+
+      {/* 날짜별 브리핑 목록 */}
+      {Object.keys(grouped).sort().map(date => (
+        <div key={date} style={{ marginBottom:24 }}>
+          <div style={{ fontSize:12, fontWeight:700, color:"#f48c06", marginBottom:10, display:"flex", alignItems:"center", gap:8 }}>
+            <span>{formatDate(date)}</span>
+            <span style={{ color:"#6e7681", fontWeight:400 }}>({grouped[date].length}건)</span>
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            {grouped[date].map(b => (
+              <div key={b.id} style={{ background:"#161b22", border:`1px solid ${b.status==="done"?"#1a3a1a":b.status==="cancelled"?"#21262d":"#21262d"}`, borderLeft:`3px solid ${statusColor[b.status]||"#30363d"}`, borderRadius:10, padding:16, opacity:b.status==="cancelled"?0.5:1 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <div style={{ fontSize:18, fontWeight:800, color:"#e6edf3" }}>{formatTime(b.scheduled_at)}</div>
+                    <span style={{ fontSize:10, background:statusColor[b.status]+"22", color:statusColor[b.status], padding:"2px 8px", borderRadius:10, fontWeight:600 }}>{statusLabel[b.status]}</span>
+                    {b.assigned_to && <span style={{ fontSize:12, color:"#8b949e" }}>👤 {b.assigned_to}</span>}
+                  </div>
+                  {(user.isAdmin || b.assigned_to===user.name) && (
+                    <div style={{ display:"flex", gap:6 }}>
+                      {b.status==="scheduled" && (
+                        <>
+                          <button onClick={()=>{ setResultModal(b); setResultText(b.result||""); }} style={{ background:"#22c55e22", color:"#22c55e", border:"1px solid #22c55e44", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer", fontWeight:600 }}>완료</button>
+                          <button onClick={()=>handleStatus(b.id,"cancelled")} style={{ background:"transparent", color:"#6e7681", border:"1px solid #30363d", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer" }}>취소</button>
+                        </>
+                      )}
+                      {user.isAdmin && (
+                        <>
+                          <button onClick={()=>{ setEditItem(b); setForm({scheduled_at:b.scheduled_at?.slice(0,16)||"", address:b.address||"", price:b.price||"", maintenance_fee:b.maintenance_fee||"", available_date:b.available_date||"", door_password:b.door_password||"", assigned_to:b.assigned_to||"", note:b.note||"", lead_id:b.lead_id||""}); setShowForm(true); }} style={{ background:"transparent", color:"#8b949e", border:"1px solid #30363d", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer" }}>수정</button>
+                          <button onClick={()=>handleDelete(b.id)} style={{ background:"transparent", color:"#ef4444", border:"1px solid #ef444444", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer" }}>삭제</button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* 브리핑 정보 카드 */}
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))", gap:8 }}>
+                  <div style={{ background:"#0d1117", borderRadius:6, padding:"8px 12px" }}>
+                    <div style={{ fontSize:10, color:"#6e7681", marginBottom:3 }}>📍 주소</div>
+                    <div style={{ fontSize:12, color:"#e6edf3", fontWeight:600, lineHeight:1.4 }}>{b.address}</div>
+                  </div>
+                  {b.price && (
+                    <div style={{ background:"#0d1117", borderRadius:6, padding:"8px 12px" }}>
+                      <div style={{ fontSize:10, color:"#6e7681", marginBottom:3 }}>💰 금액</div>
+                      <div style={{ fontSize:12, color:"#f48c06", fontWeight:600 }}>{b.price}</div>
+                    </div>
+                  )}
+                  {b.maintenance_fee && (
+                    <div style={{ background:"#0d1117", borderRadius:6, padding:"8px 12px" }}>
+                      <div style={{ fontSize:10, color:"#6e7681", marginBottom:3 }}>🏠 관리비</div>
+                      <div style={{ fontSize:12, color:"#e6edf3" }}>{b.maintenance_fee}</div>
+                    </div>
+                  )}
+                  {b.available_date && (
+                    <div style={{ background:"#0d1117", borderRadius:6, padding:"8px 12px" }}>
+                      <div style={{ fontSize:10, color:"#6e7681", marginBottom:3 }}>📆 입주가능일</div>
+                      <div style={{ fontSize:12, color:"#e6edf3" }}>{b.available_date}</div>
+                    </div>
+                  )}
+                  <div style={{ background: canSeePw(b)?"#1a1206":"#0d1117", border: canSeePw(b)?"1px solid #f48c0633":"none", borderRadius:6, padding:"8px 12px" }}>
+                    <div style={{ fontSize:10, color:"#6e7681", marginBottom:3 }}>🔐 비밀번호</div>
+                    <div style={{ fontSize:13, color: canSeePw(b)?"#f48c06":"#30363d", fontWeight:700, letterSpacing:2 }}>
+                      {b.door_password ? (canSeePw(b) ? b.door_password : "••••••") : "-"}
+                    </div>
+                  </div>
+                </div>
+
+                {b.note && (
+                  <div style={{ marginTop:8, background:"#0d1117", borderRadius:6, padding:"8px 12px", fontSize:12, color:"#8b949e" }}>
+                    💬 {b.note}
+                  </div>
+                )}
+                {b.result && (
+                  <div style={{ marginTop:8, background:"#052e16", borderRadius:6, padding:"8px 12px", fontSize:12, color:"#22c55e" }}>
+                    ✅ 결과: {b.result}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {briefings.length === 0 && !loading && (
+        <div style={{ textAlign:"center", padding:"60px 0", color:"#6e7681", fontSize:13 }}>
+          등록된 브리핑 일정이 없습니다
+        </div>
+      )}
+
+      {/* 결과 메모 모달 */}
+      {resultModal && (
+        <div style={{ position:"fixed", inset:0, background:"#000000aa", display:"flex", alignItems:"center", justifyContent:"center", zIndex:999 }}>
+          <div style={{ background:"#161b22", border:"1px solid #30363d", borderRadius:12, padding:24, width:400 }}>
+            <div style={{ fontSize:14, fontWeight:700, marginBottom:12 }}>✅ 브리핑 완료 처리</div>
+            <div style={{ fontSize:12, color:"#6e7681", marginBottom:8 }}>{resultModal.address}</div>
+            <textarea value={resultText} onChange={e=>setResultText(e.target.value)} rows={4} placeholder="브리핑 결과를 입력하세요&#10;(예: 고객 관심 있음, 재방문 예정)" style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"10px", color:"#e6edf3", fontSize:13, resize:"vertical", boxSizing:"border-box" }}/>
+            <div style={{ display:"flex", gap:8, marginTop:12 }}>
+              <button onClick={handleResult} style={{ background:"#22c55e", color:"#fff", border:"none", borderRadius:6, padding:"8px 18px", fontSize:13, fontWeight:700, cursor:"pointer" }}>저장</button>
+              <button onClick={()=>{ setResultModal(null); setResultText(""); }} style={{ background:"transparent", border:"1px solid #30363d", color:"#8b949e", borderRadius:6, padding:"8px 14px", fontSize:13, cursor:"pointer" }}>취소</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -555,8 +749,8 @@ function Dashboard({ user, onLogout, onAdmin }) {
   const [filter, setFilter]       = useState("all");
   const [srcFilter, setSrcFilter] = useState("all");
   const [areaFilter, setAreaFilter] = useState("all");
-  const [assignedFilter, setAssignedFilter] = useState("all");
   const [phoneFilter, setPhoneFilter] = useState("all");
+  const [assigneeFilter, setAssigneeFilter] = useState("all");
   const [search, setSearch]       = useState("");
   const [selected, setSelected]   = useState(null);
   const [note, setNote]           = useState("");
@@ -579,20 +773,19 @@ function Dashboard({ user, onLogout, onAdmin }) {
   const today = new Date().toISOString().slice(0,10);
 
   const AREAS = [
-    ["제주시", "제주시", ["제주시"]],
-    ["서귀포시", "서귀포시", ["서귀포시"]],
-    ["노형연동", "노형동/연동", ["노형동", "연동"]],
+    ["제주시", "제주시"],
+    ["서귀포시", "서귀포시"],
+    ["노형동|연동", "노형동·연동"],
   ];
 
   const filtered = leads.filter(l => {
     if (filter !== "all" && l.status !== filter) return false;
-    if (filter === "acquired" && assignedFilter !== "all" && l.assigned_to !== assignedFilter) return false;
+    if (filter === "acquired" && assigneeFilter !== "all" && l.assigned_to !== assigneeFilter) return false;
     if (srcFilter !== "all" && l.source !== srcFilter) return false;
     if (areaFilter !== "all") {
-      const areaEntry = AREAS.find(([key]) => key === areaFilter);
-      const matchList = areaEntry ? areaEntry[2] : [areaFilter];
       const addr = (l.address_jibun || l.address_raw || "");
-      if (!matchList.some(m => addr.includes(m))) return false;
+      const keywords = areaFilter.split("|");
+      if (!keywords.some(k => addr.includes(k))) return false;
     }
     if (phoneFilter === "has" && !l.phone) return false;
     if (search) {
@@ -603,10 +796,9 @@ function Dashboard({ user, onLogout, onAdmin }) {
     return true;
   });
 
-  const acquiredAssignees = [...new Set(leads.filter(l => l.status === "acquired" && l.assigned_to).map(l => l.assigned_to))];
-
   const counts = Object.fromEntries(Object.keys(STATUS_CONFIG).map(s=>[s,leads.filter(l=>l.status===s).length]));
   const todayCount = leads.filter(l=>l.collected_at?.startsWith(today)).length;
+  const acquiredAssignees = Array.from(new Set(leads.filter(l=>l.status==="acquired" && l.assigned_to).map(l=>l.assigned_to)));
 
   async function updateStatus(newStatus) {
     // 다른 사람이 물건확보한 경우 차단 (관리자 제외)
@@ -623,8 +815,8 @@ function Dashboard({ user, onLogout, onAdmin }) {
     }
     try {
       const patch = { status: newStatus };
-      if (newStatus === "acquired") { patch.assigned_to = user.name; patch.acquired_at = new Date().toISOString(); }
-      if (selected.status === "acquired" && newStatus !== "acquired") { patch.assigned_to = null; patch.acquired_at = null; }
+      if (newStatus === "acquired") patch.assigned_to = user.name;
+      if (selected.status === "acquired" && newStatus !== "acquired") patch.assigned_to = null;
       await sbFetch(`property_leads?id=eq.${selected.id}`, { method:"PATCH", body:JSON.stringify(patch) }, user.token);
       setLeads(p=>p.map(l=>l.id===selected.id?{...l,...patch}:l));
       setSelected(p=>({...p,...patch}));
@@ -654,7 +846,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
           <div style={{ display:"flex", gap:4, marginLeft:8 }}>
             <button onClick={()=>setView("list")} style={{ background:view==="list"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="list"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="list"?700:400 }}>📋 매물목록</button>
             <button onClick={()=>setView("stats")} style={{ background:view==="stats"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="stats"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="stats"?700:400 }}>📊 통계</button>
-            <button onClick={()=>setView("watermark")} style={{ background:view==="watermark"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="watermark"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="watermark"?700:400 }}>🧹 워터마크 제거</button>
+            <button onClick={()=>setView("briefing")} style={{ background:view==="briefing"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="briefing"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="briefing"?700:400 }}>📅 브리핑</button>
           </div>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -677,25 +869,24 @@ function Dashboard({ user, onLogout, onAdmin }) {
 
       {view === "stats" ? (
         <StatsPanel leads={leads} today={today} />
-      ) : view === "watermark" ? (
-        <WatermarkRemoverPanel />
+      ) : view === "briefing" ? (
+        <BriefingPanel user={user} leads={leads} />
       ) : (
       <div style={{ display:"flex", height:"calc(100vh - 52px)" }}>
         <div style={{ width:148, background:"#161b22", borderRight:"1px solid #21262d", padding:"14px 0", flexShrink:0, overflowY:"auto" }}>
           <div style={{ padding:"0 12px 8px", fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px" }}>상태</div>
           {[["all","전체",leads.length],...Object.entries(STATUS_CONFIG).map(([k,v])=>[k,v.label,counts[k]])].map(([key,label,count])=>(
             <div key={key}>
-              <button onClick={()=>{ setFilter(key); setAssignedFilter("all"); }} style={{ width:"100%", textAlign:"left", padding:"7px 12px", background:filter===key?"#21262d":"transparent", border:"none", color:filter===key?"#e6edf3":"#8b949e", fontSize:12, cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <button onClick={()=>{ setFilter(key); if(key!=="acquired") setAssigneeFilter("all"); }} style={{ width:"100%", textAlign:"left", padding:"7px 12px", background:filter===key?"#21262d":"transparent", border:"none", color:filter===key?"#e6edf3":"#8b949e", fontSize:12, cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                 <span>{label}</span>
                 <span style={{ fontSize:10, background:filter===key?"#30363d":"transparent", padding:"1px 6px", borderRadius:8, color:filter===key?"#e6edf3":"#6e7681" }}>{count}</span>
               </button>
               {key==="acquired" && filter==="acquired" && acquiredAssignees.length>0 && (
-                <div style={{ padding:"2px 0 4px 14px" }}>
-                  <button onClick={()=>setAssignedFilter("all")} style={{ width:"100%", textAlign:"left", padding:"5px 10px", background:assignedFilter==="all"?"#21262d":"transparent", border:"none", color:assignedFilter==="all"?"#e6edf3":"#6e7681", fontSize:11, cursor:"pointer" }}>전체 담당자</button>
-                  {acquiredAssignees.map(name=>(
-                    <button key={name} onClick={()=>setAssignedFilter(name)} style={{ width:"100%", textAlign:"left", padding:"5px 10px", background:assignedFilter===name?"#21262d":"transparent", border:"none", color:assignedFilter===name?"#e6edf3":"#6e7681", fontSize:11, cursor:"pointer", display:"flex", justifyContent:"space-between" }}>
-                      <span>{name}</span>
-                      <span style={{ fontSize:10, color:"#6e7681" }}>{leads.filter(l=>l.status==="acquired"&&l.assigned_to===name).length}</span>
+                <div style={{ paddingLeft:10 }}>
+                  {[["all","전체",counts.acquired],...acquiredAssignees.map(name=>[name,name,leads.filter(l=>l.status==="acquired"&&l.assigned_to===name).length])].map(([akey,alabel,acount])=>(
+                    <button key={akey} onClick={()=>setAssigneeFilter(akey)} style={{ width:"100%", textAlign:"left", padding:"5px 12px", background:assigneeFilter===akey?"#262c36":"transparent", border:"none", borderLeft:assigneeFilter===akey?"2px solid #a78bfa":"2px solid transparent", color:assigneeFilter===akey?"#e6edf3":"#6e7681", fontSize:11, cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                      <span>{akey==="all"?"전체":"🔒 "+alabel}</span>
+                      <span style={{ fontSize:9, color:"#6e7681" }}>{acount}</span>
                     </button>
                   ))}
                 </div>
@@ -726,7 +917,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
           ))}
           <div style={{ margin:"12px 12px 8px", height:1, background:"#21262d" }}/>
           <div style={{ padding:"0 12px 8px", fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px" }}>지역</div>
-          {[["all","전체",null],...AREAS].map(([key,label])=>(
+          {[["all","전체"],...AREAS].map(([key,label])=>(
             <button key={key} onClick={()=>setAreaFilter(key)}
               style={{ width:"100%", textAlign:"left", padding:"6px 12px", background:areaFilter===key?"#21262d":"transparent", border:"none", color:areaFilter===key?"#e6edf3":"#8b949e", fontSize:12, cursor:"pointer" }}>
               {label}
@@ -782,19 +973,31 @@ export default function App() {
   const [user, setUser] = useState(() => { try { return JSON.parse(localStorage.getItem("verita_user")); } catch { return null; } });
   const [page, setPage] = useState("dashboard");
 
-  // 토큰 만료 감지 (50분마다 + 로그인 직후 바로 1회)
+  // 토큰 만료 감지 (1시간마다 체크)
   useEffect(() => {
     if (!user) return;
-    async function tick() {
-      const newToken = await refreshSupabaseToken();
-      if (!newToken) { handleLogout(); return; }
-      const saved = JSON.parse(localStorage.getItem("verita_user"));
-      setUser(saved);
+    async function refreshToken() {
+      try {
+        const saved = JSON.parse(localStorage.getItem("verita_user"));
+        if (!saved?.refresh_token) return;
+        const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+          method: "POST",
+          headers: { "apikey": SUPABASE_ANON, "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: saved.refresh_token }),
+        });
+        if (!res.ok) { handleLogout(); return; }
+        const data = await res.json();
+        const updated = { ...saved, token: data.access_token, refresh_token: data.refresh_token };
+        localStorage.setItem("verita_user", JSON.stringify(updated));
+        setUser(updated);
+      } catch {
+        handleLogout();
+      }
     }
-    tick();
-    const interval = setInterval(tick, 50 * 60 * 1000); // 50분마다
+    refreshToken();
+    const interval = setInterval(refreshToken, 50 * 60 * 1000); // 50분마다
     return () => clearInterval(interval);
-  }, [!!user]);
+  }, []);
 
   function handleLogin(userData) {
     localStorage.setItem("verita_user", JSON.stringify(userData));
