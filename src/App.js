@@ -402,7 +402,7 @@ function BriefingPanel({ user, leads }) {
                       )}
                       {user.isAdmin && (
                         <>
-                          <button onClick={()=>{ setEditItem(b); setForm({scheduled_at:b.scheduled_at?.slice(0,16)||"", address:b.address||"", price:b.price||"", maintenance_fee:b.maintenance_fee||"", available_date:b.available_date||"", door_password:b.door_password||"", assigned_to:b.assigned_to||"", note:b.note||"", lead_id:b.lead_id||""}); setShowForm(true); }} style={{ background:"transparent", color:"#8b949e", border:"1px solid #30363d", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer" }}>수정</button>
+                          <button onClick={()=>{ setEditItem(b); const kst = b.scheduled_at ? new Date(new Date(b.scheduled_at).getTime() + 9*60*60*1000).toISOString().slice(0,16) : ""; setForm({scheduled_at:kst, address:b.address||"", price:b.price||"", maintenance_fee:b.maintenance_fee||"", available_date:b.available_date||"", door_password:b.door_password||"", assigned_to:b.assigned_to||"", note:b.note||"", lead_id:b.lead_id||""}); setShowForm(true); }} style={{ background:"transparent", color:"#8b949e", border:"1px solid #30363d", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer" }}>수정</button>
                           <button onClick={()=>handleDelete(b.id)} style={{ background:"transparent", color:"#ef4444", border:"1px solid #ef444444", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer" }}>삭제</button>
                         </>
                       )}
