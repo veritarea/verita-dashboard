@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 
 const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
 const SUPABASE_ANON = process.env.REACT_APP_SUPABASE_ANON;
-const ADMIN_EMAIL = process.env.REACT_APP_ADMIN_EMAIL; // 관리자 이메일
+const ADMIN_EMAILS = ["veritarea@gmail.com", "admin@gmail.com"];
 
 const SOURCES = {
   gyocharo:    { label: "교차로",    color: "#f5c400" },
@@ -492,7 +492,7 @@ function LoginPage({ onLogin }) {
       const data = await sbAuth("token?grant_type=password", email, password);
       const allowed = await sbFetch(`allowed_users?email=eq.${encodeURIComponent(email)}&select=email,name`);
       if (!allowed || allowed.length === 0) throw new Error("접근 권한이 없습니다. 관리자에게 문의하세요.");
-      onLogin({ token: data.access_token, refresh_token: data.refresh_token, email, name: allowed[0].name || email.split("@")[0], isAdmin: email === ADMIN_EMAIL });
+      onLogin({ token: data.access_token, refresh_token: data.refresh_token, email, name: allowed[0].name || email.split("@")[0], isAdmin: ADMIN_EMAILS.includes(email.trim()) });
     } catch(e) {
       setError(e.message);
     } finally {
@@ -648,8 +648,8 @@ function AdminPage({ user, onBack }) {
                   <div style={{ fontSize:11, color:"#6e7681", marginTop:2 }}>{u.email}</div>
                 </div>
                 <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                  {u.email === ADMIN_EMAIL && <span style={{ fontSize:10, color:"#f48c06", background:"#2d1f00", padding:"2px 8px", borderRadius:10 }}>관리자</span>}
-                  {u.email !== ADMIN_EMAIL && (
+                  {ADMIN_EMAILS.includes(u.email) && <span style={{ fontSize:10, color:"#f48c06", background:"#2d1f00", padding:"2px 8px", borderRadius:10 }}>관리자</span>}
+                  {!ADMIN_EMAILS.includes(u.email) && (
                     <button onClick={()=>deleteUser(u.email)}
                       style={{ background:"none", border:"1px solid #7f1d1d", color:"#fca5a5", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer" }}>
                       삭제
