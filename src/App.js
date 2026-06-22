@@ -248,10 +248,11 @@ function BriefingPanel({ user, leads }) {
   const handleSubmit = async () => {
     if (!form.scheduled_at || !form.address) return alert("일시와 주소는 필수입니다.");
     try {
+      const payload = { ...form, created_by: user.name, lead_id: form.lead_id || null };
       if (editItem) {
-        await sbFetch(`briefings?id=eq.${editItem.id}`, { method:"PATCH", body:JSON.stringify({...form, created_by:user.name}) }, user.token);
+        await sbFetch(`briefings?id=eq.${editItem.id}`, { method:"PATCH", body:JSON.stringify(payload) }, user.token);
       } else {
-        await sbFetch("briefings", { method:"POST", body:JSON.stringify({...form, created_by:user.name, status:"scheduled"}) }, user.token);
+        await sbFetch("briefings", { method:"POST", body:JSON.stringify({...payload, status:"scheduled"}) }, user.token);
       }
       setShowForm(false); setEditItem(null);
       setForm({ scheduled_at:"", address:"", price:"", maintenance_fee:"", available_date:"", door_password:"", assigned_to:"", note:"", lead_id:"" });
