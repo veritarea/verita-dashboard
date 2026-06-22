@@ -840,33 +840,57 @@ function Dashboard({ user, onLogout, onAdmin }) {
   return (
     <div style={{ fontFamily:"'Noto Sans KR',sans-serif", background:"#0d1117", minHeight:"100vh", color:"#e6edf3" }}>
       <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet"/>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}} *::-webkit-scrollbar{width:4px} *::-webkit-scrollbar-track{background:#0d1117} *::-webkit-scrollbar-thumb{background:#30363d;border-radius:2px}`}</style>
+      <style>{`
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+        *::-webkit-scrollbar{width:4px}
+        *::-webkit-scrollbar-track{background:#0d1117}
+        *::-webkit-scrollbar-thumb{background:#30363d;border-radius:2px}
+        .header-wrap{background:#161b22;border-bottom:1px solid #21262d;padding:8px 12px;display:flex;flex-direction:column;gap:6px;}
+        .header-top{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+        .header-left{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+        .header-right{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
+        .tab-bar{display:flex;gap:4px;overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch;}
+        .tab-bar::-webkit-scrollbar{height:0;}
+        .tab-btn{background:transparent;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;white-space:nowrap;flex-shrink:0;}
+        .tab-btn.active{background:#21262d;color:#e6edf3;font-weight:700;}
+        .sidebar{width:148px;background:#161b22;border-right:1px solid #21262d;padding:14px 0;flex-shrink:0;overflow-y:auto;}
+        .lead-list{flex:1;overflow-y:auto;}
+        .main-layout{display:flex;height:calc(100vh - 88px);}
+        .refresh-btn{background:linear-gradient(135deg,#e85d04,#f48c06);color:#fff;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;}
+        .refresh-btn:disabled{background:#21262d;cursor:not-allowed;}
+        .site-title{font-weight:700;font-size:13px;white-space:nowrap;}
+        @media(max-width:640px){
+          .sidebar{width:110px;}
+          .main-layout{height:calc(100vh - 88px);}
+        }
+      `}</style>
 
-      <div style={{ background:"#161b22", borderBottom:"1px solid #21262d", padding:"0 20px", display:"flex", alignItems:"center", justifyContent:"space-between", height:52 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <div style={{ width:26, height:26, background:"linear-gradient(135deg,#e85d04,#f48c06)", borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700 }}>V</div>
-          <span style={{ fontWeight:700, fontSize:14 }}>Verita 매물 수집</span>
-          <span style={{ fontSize:10, color:"#22c55e", background:"#052e16", padding:"2px 8px", borderRadius:10, border:"1px solid #16a34a" }}>● Live</span>
-          <div style={{ display:"flex", gap:4, marginLeft:8 }}>
-            <button onClick={()=>setView("list")} style={{ background:view==="list"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="list"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="list"?700:400 }}>📋 매물목록</button>
-            <button onClick={()=>setView("stats")} style={{ background:view==="stats"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="stats"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="stats"?700:400 }}>📊 통계</button>
-            <button onClick={()=>setView("briefing")} style={{ background:view==="briefing"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="briefing"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="briefing"?700:400 }}>📅 브리핑</button>
-            <button onClick={()=>setView("watermark")} style={{ background:view==="watermark"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="watermark"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="watermark"?700:400 }}>🧹 워터마크 제거</button>
+      <div className="header-wrap">
+        <div className="header-top">
+          <div className="header-left">
+            <div style={{ width:26, height:26, background:"linear-gradient(135deg,#e85d04,#f48c06)", borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700, flexShrink:0 }}>V</div>
+            <span className="site-title">Verita 매물 수집</span>
+            <span style={{ fontSize:10, color:"#22c55e", background:"#052e16", padding:"2px 6px", borderRadius:10, border:"1px solid #16a34a", whiteSpace:"nowrap" }}>● Live</span>
+          </div>
+          <div className="header-right">
+            {lastRefresh && <span style={{ fontSize:10, color:"#6e7681", whiteSpace:"nowrap" }}>{lastRefresh.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}</span>}
+            <span style={{ fontSize:11, color:"#8b949e", whiteSpace:"nowrap" }}>👤 {user.name}</span>
+            {user.isAdmin && (
+              <button onClick={onAdmin} style={{ background:"#21262d", border:"1px solid #30363d", color:"#f48c06", borderRadius:6, padding:"5px 8px", fontSize:11, cursor:"pointer", fontWeight:600, whiteSpace:"nowrap" }}>⚙️</button>
+            )}
+            <button onClick={loadLeads} disabled={loading} className="refresh-btn">
+              <span style={{ display:"inline-block", animation:loading?"spin 1s linear infinite":"none" }}>⟳</span>
+              {loading?" 로딩...":" 새로고침"}
+            </button>
+            <button onClick={onLogout} style={{ background:"none", border:"1px solid #30363d", color:"#8b949e", borderRadius:6, padding:"5px 8px", fontSize:11, cursor:"pointer", whiteSpace:"nowrap" }}>로그아웃</button>
           </div>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          {lastRefresh && <span style={{ fontSize:11, color:"#6e7681" }}>갱신 {lastRefresh.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}</span>}
-          <span style={{ fontSize:12, color:"#8b949e" }}>👤 {user.name}</span>
-          {user.isAdmin && (
-            <button onClick={onAdmin} style={{ background:"#21262d", border:"1px solid #30363d", color:"#f48c06", borderRadius:6, padding:"6px 12px", fontSize:12, cursor:"pointer", fontWeight:600 }}>
-              ⚙️ 관리자
-            </button>
-          )}
-          <button onClick={loadLeads} disabled={loading} style={{ background:loading?"#21262d":"linear-gradient(135deg,#e85d04,#f48c06)", color:"#fff", border:"none", borderRadius:6, padding:"6px 13px", fontSize:12, fontWeight:600, cursor:loading?"not-allowed":"pointer", display:"flex", alignItems:"center", gap:5 }}>
-            <span style={{ display:"inline-block", animation:loading?"spin 1s linear infinite":"none" }}>⟳</span>
-            {loading?"불러오는 중...":"목록 새로고침"}
-          </button>
-          <button onClick={onLogout} style={{ background:"none", border:"1px solid #30363d", color:"#8b949e", borderRadius:6, padding:"6px 12px", fontSize:12, cursor:"pointer" }}>로그아웃</button>
+        <div className="tab-bar">
+          <button className={"tab-btn"+(view==="list"?" active":"")} onClick={()=>setView("list")}>📋 매물목록</button>
+          <button className={"tab-btn"+(view==="stats"?" active":"")} onClick={()=>setView("stats")}>📊 통계</button>
+          <button className={"tab-btn"+(view==="briefing"?" active":"")} onClick={()=>setView("briefing")}>📅 브리핑</button>
+          <button className={"tab-btn"+(view==="watermark"?" active":"")} onClick={()=>setView("watermark")}>🧹 워터마크</button>
         </div>
       </div>
 
@@ -879,8 +903,8 @@ function Dashboard({ user, onLogout, onAdmin }) {
       ) : view === "watermark" ? (
         <WatermarkRemoverPanel />
       ) : (
-      <div style={{ display:"flex", height:"calc(100vh - 52px)" }}>
-        <div style={{ width:148, background:"#161b22", borderRight:"1px solid #21262d", padding:"14px 0", flexShrink:0, overflowY:"auto" }}>
+      <div className="main-layout">
+        <div className="sidebar">
           <div style={{ padding:"0 12px 8px", fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px" }}>상태</div>
           {[["all","전체",leads.length],...Object.entries(STATUS_CONFIG).map(([k,v])=>[k,v.label,counts[k]])].map(([key,label,count])=>(
             <div key={key}>
