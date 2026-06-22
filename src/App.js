@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 
 const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
 const SUPABASE_ANON = process.env.REACT_APP_SUPABASE_ANON;
-const ADMIN_EMAILS = ["veritarea@gmail.com", "admin@gmail.com"];
+const ADMIN_EMAILS = ["veritarea@gmail.com", "admin@gmail.com", "veritarea@gmail.com ".trim()];
 
 const SOURCES = {
   gyocharo:    { label: "교차로",    color: "#f5c400" },
