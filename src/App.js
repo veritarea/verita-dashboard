@@ -248,7 +248,9 @@ function BriefingPanel({ user, leads }) {
   const handleSubmit = async () => {
     if (!form.scheduled_at || !form.address) return alert("일시와 주소는 필수입니다.");
     try {
-      const payload = { ...form, created_by: user.name, lead_id: form.lead_id || null };
+      // datetime-local은 로컬 시간이므로 그대로 ISO 변환하면 KST가 유지됨
+      const scheduled_at = new Date(form.scheduled_at).toISOString();
+      const payload = { ...form, scheduled_at, created_by: user.name, lead_id: form.lead_id || null };
       if (editItem) {
         await sbFetch(`briefings?id=eq.${editItem.id}`, { method:"PATCH", body:JSON.stringify(payload) }, user.token);
       } else {
@@ -290,7 +292,7 @@ function BriefingPanel({ user, leads }) {
   const formatTime = (dt) => {
     if (!dt) return "";
     const d = new Date(dt);
-    return d.toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit', hour12:true });
+    return d.toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit', hour12:true, timeZone:'Asia/Seoul' });
   };
 
   const formatDate = (d) => {
@@ -298,7 +300,7 @@ function BriefingPanel({ user, leads }) {
     const dt = new Date(d+"T00:00:00");
     const diff = Math.round((dt - new Date(today+"T00:00:00")) / 86400000);
     const label = diff===0?"오늘":diff===1?"내일":diff===-1?"어제":"";
-    return dt.toLocaleDateString('ko-KR',{month:'long',day:'numeric',weekday:'short'}) + (label?" ("+label+")":"");
+    return dt.toLocaleDateString('ko-KR',{month:'long',day:'numeric',weekday:'short', timeZone:'Asia/Seoul'}) + (label?" ("+label+")":"");
   };
 
   const statusColor = { scheduled:"#3b82f6", done:"#22c55e", cancelled:"#6e7681" };
