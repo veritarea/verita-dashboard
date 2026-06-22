@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import WatermarkRemoverPanel from "./WatermarkRemover";
 
 const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
 const SUPABASE_ANON = process.env.REACT_APP_SUPABASE_ANON;
@@ -248,10 +249,13 @@ function BriefingPanel({ user, leads }) {
   const handleSubmit = async () => {
     if (!form.scheduled_at || !form.address) return alert("일시와 주소는 필수입니다.");
     try {
+      // datetime-local은 로컬 시간이므로 그대로 ISO 변환하면 KST가 유지됨
+      const scheduled_at = new Date(form.scheduled_at).toISOString();
+      const payload = { ...form, scheduled_at, created_by: user.name, lead_id: form.lead_id || null };
       if (editItem) {
-        await sbFetch(`briefings?id=eq.${editItem.id}`, { method:"PATCH", body:JSON.stringify({...form, created_by:user.name}) }, user.token);
+        await sbFetch(`briefings?id=eq.${editItem.id}`, { method:"PATCH", body:JSON.stringify(payload) }, user.token);
       } else {
-        await sbFetch("briefings", { method:"POST", body:JSON.stringify({...form, created_by:user.name, status:"scheduled"}) }, user.token);
+        await sbFetch("briefings", { method:"POST", body:JSON.stringify({...payload, status:"scheduled"}) }, user.token);
       }
       setShowForm(false); setEditItem(null);
       setForm({ scheduled_at:"", address:"", price:"", maintenance_fee:"", available_date:"", door_password:"", assigned_to:"", note:"", lead_id:"" });
@@ -289,7 +293,7 @@ function BriefingPanel({ user, leads }) {
   const formatTime = (dt) => {
     if (!dt) return "";
     const d = new Date(dt);
-    return d.toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit', hour12:true });
+    return d.toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit', hour12:true, timeZone:'Asia/Seoul' });
   };
 
   const formatDate = (d) => {
@@ -297,7 +301,7 @@ function BriefingPanel({ user, leads }) {
     const dt = new Date(d+"T00:00:00");
     const diff = Math.round((dt - new Date(today+"T00:00:00")) / 86400000);
     const label = diff===0?"오늘":diff===1?"내일":diff===-1?"어제":"";
-    return dt.toLocaleDateString('ko-KR',{month:'long',day:'numeric',weekday:'short'}) + (label?" ("+label+")":"");
+    return dt.toLocaleDateString('ko-KR',{month:'long',day:'numeric',weekday:'short', timeZone:'Asia/Seoul'}) + (label?" ("+label+")":"");
   };
 
   const statusColor = { scheduled:"#3b82f6", done:"#22c55e", cancelled:"#6e7681" };
@@ -847,6 +851,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
             <button onClick={()=>setView("list")} style={{ background:view==="list"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="list"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="list"?700:400 }}>📋 매물목록</button>
             <button onClick={()=>setView("stats")} style={{ background:view==="stats"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="stats"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="stats"?700:400 }}>📊 통계</button>
             <button onClick={()=>setView("briefing")} style={{ background:view==="briefing"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="briefing"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="briefing"?700:400 }}>📅 브리핑</button>
+            <button onClick={()=>setView("watermark")} style={{ background:view==="watermark"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="watermark"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="watermark"?700:400 }}>🧹 워터마크 제거</button>
           </div>
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
@@ -871,6 +876,8 @@ function Dashboard({ user, onLogout, onAdmin }) {
         <StatsPanel leads={leads} today={today} />
       ) : view === "briefing" ? (
         <BriefingPanel user={user} leads={leads} />
+      ) : view === "watermark" ? (
+        <WatermarkRemoverPanel />
       ) : (
       <div style={{ display:"flex", height:"calc(100vh - 52px)" }}>
         <div style={{ width:148, background:"#161b22", borderRight:"1px solid #21262d", padding:"14px 0", flexShrink:0, overflowY:"auto" }}>
