@@ -219,6 +219,7 @@ function BriefingPanel({ user, leads }) {
   const [editItem, setEditItem] = useState(null);
   const [resultModal, setResultModal] = useState(null);
   const [resultText, setResultText] = useState("");
+  const [members, setMembers] = useState([]);
   const [form, setForm] = useState({
     scheduled_at:"", address:"", price:"", maintenance_fee:"",
     available_date:"", door_password:"", assigned_to:"", note:"", lead_id:""
@@ -235,7 +236,14 @@ function BriefingPanel({ user, leads }) {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { loadBriefings(); }, []);
+  const loadMembers = async () => {
+    try {
+      const data = await sbFetch("allowed_users?select=email,name&order=name.asc", {}, user.token);
+      setMembers(Array.isArray(data) ? data : []);
+    } catch(e) { console.error(e); }
+  };
+
+  useEffect(() => { loadBriefings(); loadMembers(); }, []);
 
   const handleLeadSelect = (e) => {
     const lead = leads.find(l=>l.id===e.target.value);
@@ -334,17 +342,20 @@ function BriefingPanel({ user, leads }) {
         <div style={{ background:"#161b22", border:"1px solid #30363d", borderRadius:12, padding:16, marginBottom:20 }}>
           <div style={{ fontSize:13, fontWeight:700, marginBottom:14, color:"#e6edf3" }}>{editItem?"✏️ 브리핑 수정":"📝 브리핑 등록"}</div>
           <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
-              <div>
-                <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>⏰ 일시 *</div>
-                <input type="datetime-local" value={form.scheduled_at} onChange={e=>setForm(f=>({...f,scheduled_at:e.target.value}))}
-                  style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:"#e6edf3", fontSize:13, boxSizing:"border-box" }}/>
-              </div>
-              <div>
-                <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>👤 담당 직원</div>
-                <input value={form.assigned_to} onChange={e=>setForm(f=>({...f,assigned_to:e.target.value}))} placeholder="이름"
-                  style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:"#e6edf3", fontSize:13, boxSizing:"border-box" }}/>
-              </div>
+            <div>
+              <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>⏰ 일시 *</div>
+              <input type="datetime-local" value={form.scheduled_at} onChange={e=>setForm(f=>({...f,scheduled_at:e.target.value}))}
+                style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:"#e6edf3", fontSize:13, boxSizing:"border-box" }}/>
+            </div>
+            <div>
+              <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>👤 담당 직원</div>
+              <select value={form.assigned_to} onChange={e=>setForm(f=>({...f,assigned_to:e.target.value}))}
+                style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:form.assigned_to?"#e6edf3":"#6e7681", fontSize:13, boxSizing:"border-box" }}>
+                <option value="">담당자 선택</option>
+                {members.map(m=>(
+                  <option key={m.email} value={m.name}>{m.name}</option>
+                ))}
+              </select>
             </div>
             <div>
               <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>🔗 수집 매물 연결 (선택)</div>
