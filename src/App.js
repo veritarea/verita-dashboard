@@ -845,6 +845,8 @@ function Dashboard({ user, onLogout, onAdmin }) {
     ["제주시", "제주시"],
     ["서귀포시", "서귀포시"],
     ["노형동|연동", "노형동·연동"],
+    ["도두일동|도두이동", "도두동"],
+    ["이호일동|이호이동", "이호동"],
   ];
 
   const filtered = leads.filter(l => {
