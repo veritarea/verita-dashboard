@@ -830,7 +830,11 @@ function Dashboard({ user, onLogout, onAdmin }) {
   const loadLeads = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const data = await sbFetch("property_leads?select=*&order=collected_at.desc&limit=10000", {}, user.token);
+      const [data1, data2] = await Promise.all([
+  sbFetch("property_leads?select=*&status=in.(new,callback,rejected,duplicate)&order=collected_at.desc&limit=2000", {}, user.token),
+  sbFetch("property_leads?select=*&status=in.(called,acquired)&order=collected_at.desc", {}, user.token),
+]);
+const data = [...(Array.isArray(data1)?data1:[]), ...(Array.isArray(data2)?data2:[])];
       setLeads(Array.isArray(data) ? data : []);
       setLastRefresh(new Date());
     } catch(e) { setError(e.message); }
