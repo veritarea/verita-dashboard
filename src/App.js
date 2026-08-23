@@ -539,7 +539,7 @@ function AdminPage({ user, onBack }) {
 
       // 당근 매물만 + 미배정 + 신규 + 연락처있음만
       const candidates = await sbFetch(
-        "property_leads?select=id,phone,assigned_agent,source&status=eq.new&assigned_agent=is.null&source=eq.daangn&phone=not.is.null&order=collected_at.desc&limit=500",
+        `property_leads?select=id,phone,assigned_agent,source&status=eq.new&assigned_agent=is.null&source=eq.daangn&phone=neq.null&collected_at=gte.${new Date(Date.now()-86400000).toISOString().slice(0,10)}T00:00:00&order=collected_at.desc&limit=500`,
         {}, user.token
       );
       const pool = [...candidates];
