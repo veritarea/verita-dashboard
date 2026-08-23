@@ -520,25 +520,34 @@ function AdminPage({ user, onBack }) {
   }
 
   // 오늘의 매물 배정 함수
-  async function assignTodayLeads() {
-    setAssigning(true); setAssignResult("");
+  async function assignTodayLeads(auto = false) {
+    if (!auto) setAssigning(true);
+    setAssignResult("");
     try {
       const agents = users.filter(u => !ADMIN_EMAILS.includes(u.email));
-      if (agents.length === 0) { setAssignResult("배정할 직원이 없습니다."); return; }
+      if (agents.length === 0) { if (!auto) setAssignResult("배정할 직원이 없습니다."); return; }
 
-      // 당근 매물만 + 미배정 + 신규
+      // 오늘 이미 배정됐는지 확인
+      const today = new Date().toISOString().slice(0,10);
+      const alreadyAssigned = await sbFetch(
+        `property_leads?select=id&assigned_agent=not.is.null&collected_at=gte.${today}T00:00:00&limit=1`,
+        {}, user.token
+      );
+      if (auto && alreadyAssigned.length > 0) {
+        return; // 오늘 이미 배정됨, 자동 배정 스킵
+      }
+
+      // 당근 매물만 + 미배정 + 신규 + 연락처있음만
       const candidates = await sbFetch(
         "property_leads?select=id,phone,assigned_agent,source&status=eq.new&assigned_agent=is.null&source=eq.daangn&phone=not.is.null&order=collected_at.desc&limit=500",
         {}, user.token
       );
-      // 연락처있음 우선
-      const withPhone = candidates.filter(l => !!l.phone);
-      const withoutPhone = candidates.filter(l => !l.phone);
-      const pool = [...withPhone, ...withoutPhone];
+      const pool = [...candidates];
 
-      if (pool.length === 0) { setAssignResult("배정 가능한 당근 매물이 없습니다."); return; }
+      if (pool.length === 0) { if (!auto) setAssignResult("배정 가능한 당근 연락처 매물이 없습니다."); return; }
 
       const shuffled = [...pool].sort(() => Math.random() - 0.5);
+      const totalAvailable = shuffled.length;
 
       let totalAssigned = 0;
       for (const agent of agents) {
@@ -552,10 +561,22 @@ function AdminPage({ user, onBack }) {
           totalAssigned++;
         }
       }
-      setAssignResult(`✅ ${agents.length}명에게 당근 매물 총 ${totalAssigned}건 배정 완료!`);
-    } catch(e) { setAssignResult("오류: " + e.message); }
-    finally { setAssigning(false); }
+      const perAgent = Math.min(7, Math.floor(totalAvailable / agents.length));
+      const msg = totalAssigned < agents.length * 7
+        ? `✅ 연락처 있는 매물 ${totalAvailable}건 → ${agents.length}명에게 총 ${totalAssigned}건 배정 완료! (1인당 최대 ${perAgent}건)`
+        : `✅ ${agents.length}명에게 당근 연락처 매물 총 ${totalAssigned}건 배정 완료!`;
+      if (!auto) setAssignResult(msg);
+      else setAssignResult(`🔄 자동 배정 완료: ${totalAssigned}건`);
+    } catch(e) { if (!auto) setAssignResult("오류: " + e.message); }
+    finally { if (!auto) setAssigning(false); }
   }
+
+  // 관리자 페이지 로드 시 오늘 자동 배정 체크
+  useEffect(() => {
+    if (users.length > 0) {
+      assignTodayLeads(true);
+    }
+  }, [users]);
 
   // 배정 초기화
   async function resetAssignments() {
