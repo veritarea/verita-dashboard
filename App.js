@@ -21,6 +21,18 @@ const STATUS_CONFIG = {
   duplicate: { label: "중복",    color: "#9ca3af", bg: "#111" },
 };
 
+// 뱃지 색상 (직원별 고정 색상)
+const AGENT_COLORS = [
+  "#e85d04","#3b82f6","#22c55e","#a78bfa","#f59e0b",
+  "#ec4899","#06b6d4","#84cc16","#f97316","#8b5cf6"
+];
+function getAgentColor(name) {
+  if (!name) return "#6e7681";
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return AGENT_COLORS[Math.abs(hash) % AGENT_COLORS.length];
+}
+
 async function sbFetch(path, opts = {}, token = null) {
   const url = `${SUPABASE_URL}/rest/v1/${path}`;
   const res = await fetch(url, {
@@ -101,35 +113,23 @@ function BarRow({ label, count, total, color }) {
 
 function StatsPanel({ leads, today }) {
   const total = leads.length;
-
-  // 소스별 집계
   const bySource = Object.keys(SOURCES).map(key => ({
     key, label: SOURCES[key].label, color: SOURCES[key].color,
     count: leads.filter(l=>l.source===key).length,
   }));
-
-  // 상태별 집계
   const byStatus = Object.keys(STATUS_CONFIG).map(key => ({
     key, label: STATUS_CONFIG[key].label, color: STATUS_CONFIG[key].color,
     count: leads.filter(l=>l.status===key).length,
   }));
-
-  // 지역별 집계
-  const AREA_KEYS = ["노형동", "연동"];
+  const AREA_KEYS = ["노형동", "연동", "애월읍", "한림읍"];
   const byArea = AREA_KEYS.map(area => ({
     label: area,
     count: leads.filter(l=>(l.address_jibun||l.address_raw||"").includes(area)).length,
   }));
   const otherArea = total - byArea.reduce((s,a)=>s+a.count,0);
-
-  // 담당자별 확보 현황
   const assignees = {};
-  leads.forEach(l=>{
-    if (l.assigned_to) assignees[l.assigned_to] = (assignees[l.assigned_to]||0)+1;
-  });
+  leads.forEach(l=>{ if (l.assigned_to) assignees[l.assigned_to] = (assignees[l.assigned_to]||0)+1; });
   const assigneeList = Object.entries(assignees).sort((a,b)=>b[1]-a[1]);
-
-  // 최근 7일 수집 추이
   const days = [];
   for (let i=6;i>=0;i--) {
     const d = new Date();
@@ -140,61 +140,39 @@ function StatsPanel({ leads, today }) {
     days.push({ key, label, count });
   }
   const maxDayCount = Math.max(...days.map(d=>d.count), 1);
-
-  // 전화번호 보유율
-  const withPhone = leads.filter(l=>l.phone && l.phone !== "📞연락처있음" ? true : !!l.phone).length;
+  const withPhone = leads.filter(l=>!!l.phone).length;
   const acquiredCount = leads.filter(l=>l.status==="acquired").length;
   const todayCount = leads.filter(l=>l.collected_at?.startsWith(today)).length;
-
   return (
-    <div style={{ flex:1, overflowY:"auto", padding:"20px 24px", height:"calc(100vh - 52px)", boxSizing:"border-box" }}>
-      {/* 상단 요약 카드 */}
+    <div style={{ flex:1, overflowY:"auto", padding:"20px 24px", height:"calc(100vh - 88px)", boxSizing:"border-box" }}>
       <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:24 }}>
         <StatBox label="전체 매물" value={total} />
         <StatBox label="오늘 수집" value={todayCount} color="#f48c06" />
         <StatBox label="물건확보" value={acquiredCount} color="#a78bfa" sub={total>0?`전체의 ${Math.round(acquiredCount/total*100)}%`:""} />
         <StatBox label="연락처 확보" value={withPhone} color="#22c55e" sub={total>0?`전체의 ${Math.round(withPhone/total*100)}%`:""} />
       </div>
-
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:16 }}>
-        {/* 소스별 분포 */}
         <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:18 }}>
           <div style={{ fontSize:13, fontWeight:700, marginBottom:14 }}>📡 소스별 수집 현황</div>
-          {bySource.map(s=>(
-            <BarRow key={s.key} label={s.label} count={s.count} total={total} color={s.color}/>
-          ))}
+          {bySource.map(s=>(<BarRow key={s.key} label={s.label} count={s.count} total={total} color={s.color}/>))}
         </div>
-
-        {/* 상태별 분포 */}
         <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:18 }}>
           <div style={{ fontSize:13, fontWeight:700, marginBottom:14 }}>📌 상태별 분포</div>
-          {byStatus.map(s=>(
-            <BarRow key={s.key} label={s.label} count={s.count} total={total} color={s.color}/>
-          ))}
+          {byStatus.map(s=>(<BarRow key={s.key} label={s.label} count={s.count} total={total} color={s.color}/>))}
         </div>
       </div>
-
       <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:16 }}>
-        {/* 지역별 분포 */}
         <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:18 }}>
           <div style={{ fontSize:13, fontWeight:700, marginBottom:14 }}>📍 지역별 분포</div>
-          {byArea.map(a=>(
-            <BarRow key={a.label} label={a.label} count={a.count} total={total} color="#388bfd"/>
-          ))}
+          {byArea.map(a=>(<BarRow key={a.label} label={a.label} count={a.count} total={total} color="#388bfd"/>))}
           {otherArea > 0 && <BarRow label="기타" count={otherArea} total={total} color="#6e7681"/>}
         </div>
-
-        {/* 담당자별 확보 현황 */}
         <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:18 }}>
           <div style={{ fontSize:13, fontWeight:700, marginBottom:14 }}>🔒 담당자별 물건확보</div>
           {assigneeList.length===0 && <div style={{ fontSize:12, color:"#6e7681" }}>아직 확보된 매물이 없습니다</div>}
-          {assigneeList.map(([name,count])=>(
-            <BarRow key={name} label={name} count={count} total={acquiredCount||1} color="#a78bfa"/>
-          ))}
+          {assigneeList.map(([name,count])=>(<BarRow key={name} label={name} count={count} total={acquiredCount||1} color="#a78bfa"/>))}
         </div>
       </div>
-
-      {/* 최근 7일 수집 추이 */}
       <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:18 }}>
         <div style={{ fontSize:13, fontWeight:700, marginBottom:16 }}>📈 최근 7일 수집 추이</div>
         <div style={{ display:"flex", alignItems:"flex-end", gap:10, height:120 }}>
@@ -219,13 +197,12 @@ function BriefingPanel({ user, leads }) {
   const [editItem, setEditItem] = useState(null);
   const [resultModal, setResultModal] = useState(null);
   const [resultText, setResultText] = useState("");
+  const [members, setMembers] = useState([]);
   const [form, setForm] = useState({
     scheduled_at:"", address:"", price:"", maintenance_fee:"",
     available_date:"", door_password:"", assigned_to:"", note:"", lead_id:""
   });
-
   const today = new Date().toISOString().slice(0,10);
-
   const loadBriefings = async () => {
     setLoading(true);
     try {
@@ -234,22 +211,21 @@ function BriefingPanel({ user, leads }) {
     } catch(e) { console.error(e); }
     finally { setLoading(false); }
   };
-
-  useEffect(() => { loadBriefings(); }, []);
-
+  const loadMembers = async () => {
+    try {
+      const data = await sbFetch("allowed_users?select=email,name&order=name.asc", {}, user.token);
+      setMembers(Array.isArray(data) ? data : []);
+    } catch(e) { console.error(e); }
+  };
+  useEffect(() => { loadBriefings(); loadMembers(); }, []);
   const handleLeadSelect = (e) => {
     const lead = leads.find(l=>l.id===e.target.value);
-    if (lead) {
-      setForm(f=>({ ...f, lead_id:lead.id, address:lead.address_raw||"", price:lead.price||"" }));
-    } else {
-      setForm(f=>({ ...f, lead_id:"" }));
-    }
+    if (lead) { setForm(f=>({ ...f, lead_id:lead.id, address:lead.address_raw||"", price:lead.price||"" })); }
+    else { setForm(f=>({ ...f, lead_id:"" })); }
   };
-
   const handleSubmit = async () => {
     if (!form.scheduled_at || !form.address) return alert("일시와 주소는 필수입니다.");
     try {
-      // datetime-local은 로컬 시간이므로 그대로 ISO 변환하면 KST가 유지됨
       const scheduled_at = new Date(form.scheduled_at).toISOString();
       const payload = { ...form, scheduled_at, created_by: user.name, lead_id: form.lead_id || null };
       if (editItem) {
@@ -262,40 +238,33 @@ function BriefingPanel({ user, leads }) {
       loadBriefings();
     } catch(e) { alert("저장 오류: "+e.message); }
   };
-
   const handleStatus = async (id, status) => {
     await sbFetch(`briefings?id=eq.${id}`, { method:"PATCH", body:JSON.stringify({status}) }, user.token);
     loadBriefings();
   };
-
   const handleResult = async () => {
     await sbFetch(`briefings?id=eq.${resultModal.id}`, { method:"PATCH", body:JSON.stringify({result:resultText, status:"done"}) }, user.token);
-    setResultModal(null); setResultText("");
-    loadBriefings();
+    setResultModal(null); setResultText(""); loadBriefings();
   };
-
   const handleDelete = async (id) => {
     if (!window.confirm("삭제하시겠습니까?")) return;
     await sbFetch(`briefings?id=eq.${id}`, { method:"DELETE" }, user.token);
     loadBriefings();
   };
-
   const canSeePw = (b) => user.isAdmin || b.assigned_to === user.name;
-
-  // 날짜별 그룹핑
   const grouped = {};
   briefings.forEach(b => {
     const d = b.scheduled_at?.slice(0,10) || "미정";
     if (!grouped[d]) grouped[d] = [];
     grouped[d].push(b);
   });
-
+  const upcomingDates = Object.keys(grouped).filter(d => d >= today).sort();
+  const pastDates = Object.keys(grouped).filter(d => d < today).sort().reverse();
+  const [showPast, setShowPast] = useState(false);
   const formatTime = (dt) => {
     if (!dt) return "";
-    const d = new Date(dt);
-    return d.toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit', hour12:true, timeZone:'Asia/Seoul' });
+    return new Date(dt).toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit', hour12:true, timeZone:'Asia/Seoul' });
   };
-
   const formatDate = (d) => {
     if (!d) return "미정";
     const dt = new Date(d+"T00:00:00");
@@ -303,177 +272,160 @@ function BriefingPanel({ user, leads }) {
     const label = diff===0?"오늘":diff===1?"내일":diff===-1?"어제":"";
     return dt.toLocaleDateString('ko-KR',{month:'long',day:'numeric',weekday:'short', timeZone:'Asia/Seoul'}) + (label?" ("+label+")":"");
   };
-
   const statusColor = { scheduled:"#3b82f6", done:"#22c55e", cancelled:"#6e7681" };
   const statusLabel = { scheduled:"예정", done:"완료", cancelled:"취소" };
-
+  const BriefingCard = ({ b }) => (
+    <div style={{ background:"#161b22", border:"1px solid #21262d", borderLeft:`4px solid ${statusColor[b.status]||"#30363d"}`, borderRadius:10, overflow:"hidden", opacity:b.status==="cancelled"?0.5:1 }}>
+      <div style={{ padding:"12px 14px", display:"flex", justifyContent:"space-between", alignItems:"center", borderBottom:"1px solid #21262d" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+          <div style={{ fontSize:20, fontWeight:800, color:"#e6edf3", letterSpacing:"-0.5px" }}>{formatTime(b.scheduled_at)}</div>
+          <span style={{ fontSize:10, background:statusColor[b.status]+"22", color:statusColor[b.status], padding:"3px 8px", borderRadius:10, fontWeight:700 }}>{statusLabel[b.status]}</span>
+          {b.assigned_to && <span style={{ fontSize:12, color:"#8b949e" }}>👤 {b.assigned_to}</span>}
+        </div>
+        {(user.isAdmin || b.assigned_to===user.name) && (
+          <div style={{ display:"flex", gap:5, flexShrink:0 }}>
+            {b.status==="scheduled" && (
+              <>
+                <button onClick={()=>{ setResultModal(b); setResultText(b.result||""); }} style={{ background:"#22c55e22", color:"#22c55e", border:"1px solid #22c55e44", borderRadius:6, padding:"5px 10px", fontSize:11, cursor:"pointer", fontWeight:700 }}>완료</button>
+                <button onClick={()=>handleStatus(b.id,"cancelled")} style={{ background:"transparent", color:"#6e7681", border:"1px solid #30363d", borderRadius:6, padding:"5px 10px", fontSize:11, cursor:"pointer" }}>취소</button>
+              </>
+            )}
+            {user.isAdmin && (
+              <>
+                <button onClick={()=>{ setEditItem(b); const kst = b.scheduled_at ? new Date(new Date(b.scheduled_at).getTime()+9*60*60*1000).toISOString().slice(0,16) : ""; setForm({scheduled_at:kst, address:b.address||"", price:b.price||"", maintenance_fee:b.maintenance_fee||"", available_date:b.available_date||"", door_password:b.door_password||"", assigned_to:b.assigned_to||"", note:b.note||"", lead_id:b.lead_id||""}); setShowForm(true); }} style={{ background:"transparent", color:"#8b949e", border:"1px solid #30363d", borderRadius:6, padding:"5px 10px", fontSize:11, cursor:"pointer" }}>수정</button>
+                <button onClick={()=>handleDelete(b.id)} style={{ background:"transparent", color:"#ef4444", border:"1px solid #ef444422", borderRadius:6, padding:"5px 10px", fontSize:11, cursor:"pointer" }}>삭제</button>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+      <div style={{ padding:"12px 14px" }}>
+        <div style={{ marginBottom:10 }}>
+          <div style={{ fontSize:10, color:"#6e7681", marginBottom:3 }}>📍 주소</div>
+          <div style={{ fontSize:13, color:"#e6edf3", fontWeight:600, lineHeight:1.4 }}>{b.address}</div>
+        </div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+          {b.price && <div style={{ background:"#0d1117", borderRadius:6, padding:"8px 10px" }}><div style={{ fontSize:10, color:"#6e7681", marginBottom:2 }}>💰 금액</div><div style={{ fontSize:13, color:"#f48c06", fontWeight:700 }}>{b.price}</div></div>}
+          {b.maintenance_fee && <div style={{ background:"#0d1117", borderRadius:6, padding:"8px 10px" }}><div style={{ fontSize:10, color:"#6e7681", marginBottom:2 }}>🏠 관리비</div><div style={{ fontSize:12, color:"#e6edf3" }}>{b.maintenance_fee}</div></div>}
+          {b.available_date && <div style={{ background:"#0d1117", borderRadius:6, padding:"8px 10px" }}><div style={{ fontSize:10, color:"#6e7681", marginBottom:2 }}>📆 입주가능일</div><div style={{ fontSize:12, color:"#e6edf3" }}>{b.available_date}</div></div>}
+          <div style={{ background:canSeePw(b)?"#1a1206":"#0d1117", border:canSeePw(b)?"1px solid #f48c0633":"1px solid #21262d", borderRadius:6, padding:"8px 10px" }}>
+            <div style={{ fontSize:10, color:"#6e7681", marginBottom:2 }}>🔐 비밀번호</div>
+            <div style={{ fontSize:14, color:canSeePw(b)?"#f48c06":"#30363d", fontWeight:800, letterSpacing:3 }}>{b.door_password ? (canSeePw(b) ? b.door_password : "••••••") : "-"}</div>
+          </div>
+        </div>
+        {b.note && <div style={{ marginTop:8, background:"#0d1117", borderRadius:6, padding:"8px 10px", fontSize:12, color:"#8b949e", lineHeight:1.5 }}>💬 {b.note}</div>}
+        {b.result && <div style={{ marginTop:8, background:"#052e16", border:"1px solid #16a34a22", borderRadius:6, padding:"8px 10px", fontSize:12, color:"#22c55e", lineHeight:1.5 }}>✅ {b.result}</div>}
+      </div>
+    </div>
+  );
   return (
-    <div style={{ flex:1, overflowY:"auto", padding:"20px 24px", height:"calc(100vh - 52px)", boxSizing:"border-box" }}>
-      {/* 상단 헤더 */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+    <div style={{ flex:1, overflowY:"auto", padding:"16px", boxSizing:"border-box", height:"calc(100vh - 88px)" }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
         <div>
-          <div style={{ fontSize:16, fontWeight:700 }}>📅 브리핑 일정</div>
-          <div style={{ fontSize:12, color:"#6e7681", marginTop:2 }}>총 {briefings.filter(b=>b.status==="scheduled").length}건 예정</div>
+          <div style={{ fontSize:15, fontWeight:700 }}>📅 브리핑 일정</div>
+          <div style={{ fontSize:11, color:"#6e7681", marginTop:2 }}>예정 {briefings.filter(b=>b.status==="scheduled").length}건 · 완료 {briefings.filter(b=>b.status==="done").length}건</div>
         </div>
         {user.isAdmin && (
-          <button onClick={()=>{ setShowForm(true); setEditItem(null); setForm({ scheduled_at:"", address:"", price:"", maintenance_fee:"", available_date:"", door_password:"", assigned_to:"", note:"", lead_id:"" }); }} style={{ background:"linear-gradient(135deg,#e85d04,#f48c06)", color:"#fff", border:"none", borderRadius:8, padding:"8px 16px", fontSize:13, fontWeight:700, cursor:"pointer" }}>
-            + 브리핑 등록
+          <button onClick={()=>{ setShowForm(!showForm); setEditItem(null); setForm({ scheduled_at:"", address:"", price:"", maintenance_fee:"", available_date:"", door_password:"", assigned_to:"", note:"", lead_id:"" }); }}
+            style={{ background:"linear-gradient(135deg,#e85d04,#f48c06)", color:"#fff", border:"none", borderRadius:8, padding:"8px 14px", fontSize:12, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap" }}>
+            {showForm ? "✕ 닫기" : "+ 등록"}
           </button>
         )}
       </div>
-
-      {/* 등록/수정 폼 */}
       {showForm && (
-        <div style={{ background:"#161b22", border:"1px solid #30363d", borderRadius:12, padding:20, marginBottom:20 }}>
-          <div style={{ fontSize:14, fontWeight:700, marginBottom:16 }}>{editItem?"브리핑 수정":"브리핑 등록"}</div>
-          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
-            <div>
-              <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>일시 *</div>
-              <input type="datetime-local" value={form.scheduled_at} onChange={e=>setForm(f=>({...f,scheduled_at:e.target.value}))} style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"7px 10px", color:"#e6edf3", fontSize:13 }}/>
-            </div>
-            <div>
-              <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>담당 직원</div>
-              <input value={form.assigned_to} onChange={e=>setForm(f=>({...f,assigned_to:e.target.value}))} placeholder="이름 입력" style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"7px 10px", color:"#e6edf3", fontSize:13 }}/>
-            </div>
-            <div style={{ gridColumn:"1/-1" }}>
-              <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>수집 매물에서 선택 (선택사항)</div>
-              <select onChange={handleLeadSelect} style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"7px 10px", color:"#e6edf3", fontSize:13 }}>
-                <option value="">직접 입력</option>
-                {leads.filter(l=>l.address_raw).map(l=>(
-                  <option key={l.id} value={l.id}>{l.address_raw?.slice(0,40)} {l.price?"| "+l.price:""}</option>
-                ))}
+        <div style={{ background:"#161b22", border:"1px solid #30363d", borderRadius:12, padding:16, marginBottom:20 }}>
+          <div style={{ fontSize:13, fontWeight:700, marginBottom:14, color:"#e6edf3" }}>{editItem?"✏️ 브리핑 수정":"📝 브리핑 등록"}</div>
+          <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+            <div><div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>⏰ 일시 *</div><input type="datetime-local" value={form.scheduled_at} onChange={e=>setForm(f=>({...f,scheduled_at:e.target.value}))} style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:"#e6edf3", fontSize:13, boxSizing:"border-box" }}/></div>
+            <div><div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>👤 담당 직원</div>
+              <select value={form.assigned_to} onChange={e=>setForm(f=>({...f,assigned_to:e.target.value}))} style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:form.assigned_to?"#e6edf3":"#6e7681", fontSize:13, boxSizing:"border-box" }}>
+                <option value="">담당자 선택</option>
+                {members.map(m=>(<option key={m.email} value={m.name}>{m.name}</option>))}
               </select>
             </div>
-            <div style={{ gridColumn:"1/-1" }}>
-              <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>주소 *</div>
-              <input value={form.address} onChange={e=>setForm(f=>({...f,address:e.target.value}))} placeholder="주소 입력" style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"7px 10px", color:"#e6edf3", fontSize:13 }}/>
+            <div><div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>🔗 수집 매물 연결 (선택)</div>
+              <select onChange={handleLeadSelect} style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:"#e6edf3", fontSize:13, boxSizing:"border-box" }}>
+                <option value="">직접 입력</option>
+                {leads.filter(l=>l.address_raw).map(l=>(<option key={l.id} value={l.id}>{l.address_raw?.slice(0,35)} {l.price?"| "+l.price:""}</option>))}
+              </select>
             </div>
-            <div>
-              <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>금액</div>
-              <input value={form.price} onChange={e=>setForm(f=>({...f,price:e.target.value}))} placeholder="예: 보증금 500/월세 45" style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"7px 10px", color:"#e6edf3", fontSize:13 }}/>
+            <div><div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>📍 주소 *</div><input value={form.address} onChange={e=>setForm(f=>({...f,address:e.target.value}))} placeholder="주소 입력" style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:"#e6edf3", fontSize:13, boxSizing:"border-box" }}/></div>
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+              <div><div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>💰 금액</div><input value={form.price} onChange={e=>setForm(f=>({...f,price:e.target.value}))} placeholder="보증금/월세" style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:"#e6edf3", fontSize:13, boxSizing:"border-box" }}/></div>
+              <div><div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>🏠 관리비</div><input value={form.maintenance_fee} onChange={e=>setForm(f=>({...f,maintenance_fee:e.target.value}))} placeholder="관리비" style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:"#e6edf3", fontSize:13, boxSizing:"border-box" }}/></div>
+              <div><div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>📆 입주가능일</div><input value={form.available_date} onChange={e=>setForm(f=>({...f,available_date:e.target.value}))} placeholder="즉시입주 / 날짜" style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:"#e6edf3", fontSize:13, boxSizing:"border-box" }}/></div>
+              <div><div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>🔐 비밀번호</div><input value={form.door_password} onChange={e=>setForm(f=>({...f,door_password:e.target.value}))} placeholder="도어락 번호" style={{ width:"100%", background:"#0d1117", border:"1px solid #f48c0666", borderRadius:6, padding:"8px 10px", color:"#f48c06", fontSize:13, fontWeight:700, boxSizing:"border-box" }}/></div>
             </div>
-            <div>
-              <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>관리비</div>
-              <input value={form.maintenance_fee} onChange={e=>setForm(f=>({...f,maintenance_fee:e.target.value}))} placeholder="예: 5만원 (인터넷 포함)" style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"7px 10px", color:"#e6edf3", fontSize:13 }}/>
-            </div>
-            <div>
-              <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>입주가능일</div>
-              <input value={form.available_date} onChange={e=>setForm(f=>({...f,available_date:e.target.value}))} placeholder="예: 즉시입주 / 2026.07.01" style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"7px 10px", color:"#e6edf3", fontSize:13 }}/>
-            </div>
-            <div>
-              <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>🔐 비밀번호</div>
-              <input value={form.door_password} onChange={e=>setForm(f=>({...f,door_password:e.target.value}))} placeholder="도어락 비밀번호" style={{ width:"100%", background:"#0d1117", border:"1px solid #f48c06", borderRadius:6, padding:"7px 10px", color:"#f48c06", fontSize:13 }}/>
-            </div>
-            <div style={{ gridColumn:"1/-1" }}>
-              <div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>추가 메모</div>
-              <textarea value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))} rows={2} placeholder="특이사항, 주차 안내 등" style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"7px 10px", color:"#e6edf3", fontSize:13, resize:"vertical" }}/>
-            </div>
+            <div><div style={{ fontSize:11, color:"#6e7681", marginBottom:4 }}>💬 메모</div><textarea value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))} rows={2} placeholder="특이사항, 주차 안내 등" style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:"#e6edf3", fontSize:13, resize:"vertical", boxSizing:"border-box" }}/></div>
           </div>
           <div style={{ display:"flex", gap:8, marginTop:14 }}>
-            <button onClick={handleSubmit} style={{ background:"linear-gradient(135deg,#e85d04,#f48c06)", color:"#fff", border:"none", borderRadius:6, padding:"8px 18px", fontSize:13, fontWeight:700, cursor:"pointer" }}>저장</button>
-            <button onClick={()=>{ setShowForm(false); setEditItem(null); }} style={{ background:"transparent", border:"1px solid #30363d", color:"#8b949e", borderRadius:6, padding:"8px 14px", fontSize:13, cursor:"pointer" }}>취소</button>
+            <button onClick={handleSubmit} style={{ background:"linear-gradient(135deg,#e85d04,#f48c06)", color:"#fff", border:"none", borderRadius:6, padding:"10px 20px", fontSize:13, fontWeight:700, cursor:"pointer", flex:1 }}>저장</button>
+            <button onClick={()=>{ setShowForm(false); setEditItem(null); }} style={{ background:"transparent", border:"1px solid #30363d", color:"#8b949e", borderRadius:6, padding:"10px 16px", fontSize:13, cursor:"pointer" }}>취소</button>
           </div>
         </div>
       )}
-
-      {/* 날짜별 브리핑 목록 */}
-      {Object.keys(grouped).sort().map(date => (
+      {upcomingDates.length === 0 && !showForm && (
+        <div style={{ textAlign:"center", padding:"40px 0 20px", color:"#6e7681", fontSize:13 }}>
+          <div style={{ fontSize:32, marginBottom:12 }}>📋</div>예정된 브리핑이 없습니다
+        </div>
+      )}
+      {upcomingDates.map(date => (
         <div key={date} style={{ marginBottom:24 }}>
-          <div style={{ fontSize:12, fontWeight:700, color:"#f48c06", marginBottom:10, display:"flex", alignItems:"center", gap:8 }}>
-            <span>{formatDate(date)}</span>
-            <span style={{ color:"#6e7681", fontWeight:400 }}>({grouped[date].length}건)</span>
+          <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10, padding:"6px 10px", background:"#161b22", borderRadius:8, border:"1px solid #21262d" }}>
+            <span style={{ fontSize:13, fontWeight:700, color:"#f48c06" }}>{formatDate(date)}</span>
+            <span style={{ fontSize:11, color:"#6e7681" }}>{grouped[date].length}건</span>
           </div>
           <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-            {grouped[date].map(b => (
-              <div key={b.id} style={{ background:"#161b22", border:`1px solid ${b.status==="done"?"#1a3a1a":b.status==="cancelled"?"#21262d":"#21262d"}`, borderLeft:`3px solid ${statusColor[b.status]||"#30363d"}`, borderRadius:10, padding:16, opacity:b.status==="cancelled"?0.5:1 }}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:10 }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                    <div style={{ fontSize:18, fontWeight:800, color:"#e6edf3" }}>{formatTime(b.scheduled_at)}</div>
-                    <span style={{ fontSize:10, background:statusColor[b.status]+"22", color:statusColor[b.status], padding:"2px 8px", borderRadius:10, fontWeight:600 }}>{statusLabel[b.status]}</span>
-                    {b.assigned_to && <span style={{ fontSize:12, color:"#8b949e" }}>👤 {b.assigned_to}</span>}
-                  </div>
-                  {(user.isAdmin || b.assigned_to===user.name) && (
-                    <div style={{ display:"flex", gap:6 }}>
-                      {b.status==="scheduled" && (
-                        <>
-                          <button onClick={()=>{ setResultModal(b); setResultText(b.result||""); }} style={{ background:"#22c55e22", color:"#22c55e", border:"1px solid #22c55e44", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer", fontWeight:600 }}>완료</button>
-                          <button onClick={()=>handleStatus(b.id,"cancelled")} style={{ background:"transparent", color:"#6e7681", border:"1px solid #30363d", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer" }}>취소</button>
-                        </>
-                      )}
-                      {user.isAdmin && (
-                        <>
-                          <button onClick={()=>{ setEditItem(b); setForm({scheduled_at:b.scheduled_at?.slice(0,16)||"", address:b.address||"", price:b.price||"", maintenance_fee:b.maintenance_fee||"", available_date:b.available_date||"", door_password:b.door_password||"", assigned_to:b.assigned_to||"", note:b.note||"", lead_id:b.lead_id||""}); setShowForm(true); }} style={{ background:"transparent", color:"#8b949e", border:"1px solid #30363d", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer" }}>수정</button>
-                          <button onClick={()=>handleDelete(b.id)} style={{ background:"transparent", color:"#ef4444", border:"1px solid #ef444444", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer" }}>삭제</button>
-                        </>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* 브리핑 정보 카드 */}
-                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))", gap:8 }}>
-                  <div style={{ background:"#0d1117", borderRadius:6, padding:"8px 12px" }}>
-                    <div style={{ fontSize:10, color:"#6e7681", marginBottom:3 }}>📍 주소</div>
-                    <div style={{ fontSize:12, color:"#e6edf3", fontWeight:600, lineHeight:1.4 }}>{b.address}</div>
-                  </div>
-                  {b.price && (
-                    <div style={{ background:"#0d1117", borderRadius:6, padding:"8px 12px" }}>
-                      <div style={{ fontSize:10, color:"#6e7681", marginBottom:3 }}>💰 금액</div>
-                      <div style={{ fontSize:12, color:"#f48c06", fontWeight:600 }}>{b.price}</div>
-                    </div>
-                  )}
-                  {b.maintenance_fee && (
-                    <div style={{ background:"#0d1117", borderRadius:6, padding:"8px 12px" }}>
-                      <div style={{ fontSize:10, color:"#6e7681", marginBottom:3 }}>🏠 관리비</div>
-                      <div style={{ fontSize:12, color:"#e6edf3" }}>{b.maintenance_fee}</div>
-                    </div>
-                  )}
-                  {b.available_date && (
-                    <div style={{ background:"#0d1117", borderRadius:6, padding:"8px 12px" }}>
-                      <div style={{ fontSize:10, color:"#6e7681", marginBottom:3 }}>📆 입주가능일</div>
-                      <div style={{ fontSize:12, color:"#e6edf3" }}>{b.available_date}</div>
-                    </div>
-                  )}
-                  <div style={{ background: canSeePw(b)?"#1a1206":"#0d1117", border: canSeePw(b)?"1px solid #f48c0633":"none", borderRadius:6, padding:"8px 12px" }}>
-                    <div style={{ fontSize:10, color:"#6e7681", marginBottom:3 }}>🔐 비밀번호</div>
-                    <div style={{ fontSize:13, color: canSeePw(b)?"#f48c06":"#30363d", fontWeight:700, letterSpacing:2 }}>
-                      {b.door_password ? (canSeePw(b) ? b.door_password : "••••••") : "-"}
-                    </div>
-                  </div>
-                </div>
-
-                {b.note && (
-                  <div style={{ marginTop:8, background:"#0d1117", borderRadius:6, padding:"8px 12px", fontSize:12, color:"#8b949e" }}>
-                    💬 {b.note}
-                  </div>
-                )}
-                {b.result && (
-                  <div style={{ marginTop:8, background:"#052e16", borderRadius:6, padding:"8px 12px", fontSize:12, color:"#22c55e" }}>
-                    ✅ 결과: {b.result}
-                  </div>
-                )}
-              </div>
-            ))}
+            {grouped[date].map(b => <BriefingCard key={b.id} b={b} />)}
           </div>
         </div>
       ))}
-
-      {briefings.length === 0 && !loading && (
-        <div style={{ textAlign:"center", padding:"60px 0", color:"#6e7681", fontSize:13 }}>
-          등록된 브리핑 일정이 없습니다
+      {pastDates.length > 0 && (
+        <div style={{ marginTop:8 }}>
+          <button onClick={()=>setShowPast(p=>!p)} style={{ width:"100%", background:"#161b22", border:"1px solid #21262d", borderRadius:8, padding:"10px 14px", color:"#6e7681", fontSize:12, cursor:"pointer", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+            <span>🗂 지난 브리핑 ({pastDates.reduce((s,d)=>s+grouped[d].length,0)}건)</span>
+            <span>{showPast ? "▲ 접기" : "▼ 펼치기"}</span>
+          </button>
+          {showPast && (
+            <div style={{ marginTop:10 }}>
+              {pastDates.map(date => (
+                <div key={date} style={{ marginBottom:16 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8, padding:"5px 10px", background:"#0d1117", borderRadius:6, border:"1px solid #21262d" }}>
+                    <span style={{ fontSize:12, fontWeight:600, color:"#6e7681" }}>{formatDate(date)}</span>
+                    <span style={{ fontSize:11, color:"#30363d" }}>{grouped[date].length}건</span>
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                    {grouped[date].map(b => (
+                      <div key={b.id} style={{ background:"#0d1117", border:"1px solid #21262d", borderLeft:`3px solid ${statusColor[b.status]||"#30363d"}`, borderRadius:8, padding:"10px 12px", opacity:0.7 }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                            <span style={{ fontSize:14, fontWeight:700, color:"#8b949e" }}>{formatTime(b.scheduled_at)}</span>
+                            <span style={{ fontSize:10, background:statusColor[b.status]+"22", color:statusColor[b.status], padding:"2px 6px", borderRadius:8, fontWeight:600 }}>{statusLabel[b.status]}</span>
+                            {b.assigned_to && <span style={{ fontSize:11, color:"#6e7681" }}>👤 {b.assigned_to}</span>}
+                          </div>
+                          {user.isAdmin && <button onClick={()=>handleDelete(b.id)} style={{ background:"transparent", color:"#ef4444", border:"none", fontSize:11, cursor:"pointer" }}>삭제</button>}
+                        </div>
+                        <div style={{ fontSize:12, color:"#6e7681", marginBottom:4 }}>📍 {b.address}</div>
+                        {b.price && <span style={{ fontSize:11, color:"#8b949e", marginRight:8 }}>💰 {b.price}</span>}
+                        {b.result && <div style={{ marginTop:6, fontSize:11, color:"#22c55e" }}>✅ {b.result}</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
-
-      {/* 결과 메모 모달 */}
       {resultModal && (
-        <div style={{ position:"fixed", inset:0, background:"#000000aa", display:"flex", alignItems:"center", justifyContent:"center", zIndex:999 }}>
-          <div style={{ background:"#161b22", border:"1px solid #30363d", borderRadius:12, padding:24, width:400 }}>
-            <div style={{ fontSize:14, fontWeight:700, marginBottom:12 }}>✅ 브리핑 완료 처리</div>
-            <div style={{ fontSize:12, color:"#6e7681", marginBottom:8 }}>{resultModal.address}</div>
-            <textarea value={resultText} onChange={e=>setResultText(e.target.value)} rows={4} placeholder="브리핑 결과를 입력하세요&#10;(예: 고객 관심 있음, 재방문 예정)" style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"10px", color:"#e6edf3", fontSize:13, resize:"vertical", boxSizing:"border-box" }}/>
+        <div style={{ position:"fixed", inset:0, background:"#000000bb", display:"flex", alignItems:"center", justifyContent:"center", zIndex:999, padding:16 }}>
+          <div style={{ background:"#161b22", border:"1px solid #30363d", borderRadius:12, padding:20, width:"100%", maxWidth:400, boxSizing:"border-box" }}>
+            <div style={{ fontSize:14, fontWeight:700, marginBottom:8 }}>✅ 브리핑 완료</div>
+            <div style={{ fontSize:12, color:"#6e7681", marginBottom:12, lineHeight:1.4 }}>{resultModal.address}</div>
+            <textarea value={resultText} onChange={e=>setResultText(e.target.value)} rows={4} placeholder="결과 메모&#10;예: 고객 관심 있음, 재방문 예정" style={{ width:"100%", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"10px", color:"#e6edf3", fontSize:13, resize:"vertical", boxSizing:"border-box" }}/>
             <div style={{ display:"flex", gap:8, marginTop:12 }}>
-              <button onClick={handleResult} style={{ background:"#22c55e", color:"#fff", border:"none", borderRadius:6, padding:"8px 18px", fontSize:13, fontWeight:700, cursor:"pointer" }}>저장</button>
-              <button onClick={()=>{ setResultModal(null); setResultText(""); }} style={{ background:"transparent", border:"1px solid #30363d", color:"#8b949e", borderRadius:6, padding:"8px 14px", fontSize:13, cursor:"pointer" }}>취소</button>
+              <button onClick={handleResult} style={{ background:"#22c55e", color:"#fff", border:"none", borderRadius:6, padding:"10px 0", fontSize:13, fontWeight:700, cursor:"pointer", flex:1 }}>저장</button>
+              <button onClick={()=>{ setResultModal(null); setResultText(""); }} style={{ background:"transparent", border:"1px solid #30363d", color:"#8b949e", borderRadius:6, padding:"10px 16px", fontSize:13, cursor:"pointer" }}>취소</button>
             </div>
           </div>
         </div>
@@ -484,11 +436,10 @@ function BriefingPanel({ user, leads }) {
 
 // ── 로그인 화면 ──
 function LoginPage({ onLogin }) {
-  const [email, setEmail]       = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState("");
-
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   async function handleLogin() {
     if (!email || !password) return;
     setLoading(true); setError("");
@@ -497,40 +448,27 @@ function LoginPage({ onLogin }) {
       const allowed = await sbFetch(`allowed_users?email=eq.${encodeURIComponent(email)}&select=email,name`);
       if (!allowed || allowed.length === 0) throw new Error("접근 권한이 없습니다. 관리자에게 문의하세요.");
       onLogin({ token: data.access_token, refresh_token: data.refresh_token, email, name: allowed[0].name || email.split("@")[0], isAdmin: ADMIN_EMAILS.includes(email.trim()) });
-    } catch(e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch(e) { setError(e.message); }
+    finally { setLoading(false); }
   }
-
   return (
     <div style={{ fontFamily:"'Noto Sans KR',sans-serif", background:"#0d1117", minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center" }}>
       <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet"/>
       <div style={{ width:360, background:"#161b22", border:"1px solid #21262d", borderRadius:12, padding:32 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:28 }}>
           <div style={{ width:36, height:36, background:"linear-gradient(135deg,#e85d04,#f48c06)", borderRadius:8, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, fontWeight:700, color:"#fff" }}>V</div>
-          <div>
-            <div style={{ fontWeight:700, fontSize:16, color:"#e6edf3" }}>Verita</div>
-            <div style={{ fontSize:11, color:"#6e7681" }}>매물 수집 시스템</div>
-          </div>
+          <div><div style={{ fontWeight:700, fontSize:16, color:"#e6edf3" }}>Verita</div><div style={{ fontSize:11, color:"#6e7681" }}>매물 수집 시스템</div></div>
         </div>
         <div style={{ marginBottom:14 }}>
           <div style={{ fontSize:12, color:"#8b949e", marginBottom:6 }}>이메일</div>
-          <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="이메일 입력"
-            style={{ width:"100%", boxSizing:"border-box", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"9px 12px", color:"#e6edf3", fontSize:13, outline:"none" }}
-          />
+          <input value={email} onChange={e=>setEmail(e.target.value)} placeholder="이메일 입력" style={{ width:"100%", boxSizing:"border-box", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"9px 12px", color:"#e6edf3", fontSize:13, outline:"none" }}/>
         </div>
         <div style={{ marginBottom:20 }}>
           <div style={{ fontSize:12, color:"#8b949e", marginBottom:6 }}>비밀번호</div>
-          <input value={password} onChange={e=>setPassword(e.target.value)} type="password" placeholder="비밀번호 입력"
-            onKeyDown={e=>e.key==="Enter"&&handleLogin()}
-            style={{ width:"100%", boxSizing:"border-box", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"9px 12px", color:"#e6edf3", fontSize:13, outline:"none" }}
-          />
+          <input value={password} onChange={e=>setPassword(e.target.value)} type="password" placeholder="비밀번호 입력" onKeyDown={e=>e.key==="Enter"&&handleLogin()} style={{ width:"100%", boxSizing:"border-box", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"9px 12px", color:"#e6edf3", fontSize:13, outline:"none" }}/>
         </div>
         {error && <div style={{ background:"#2d0f0f", border:"1px solid #7f1d1d", borderRadius:6, padding:"8px 12px", fontSize:12, color:"#fca5a5", marginBottom:14 }}>{error}</div>}
-        <button onClick={handleLogin} disabled={loading}
-          style={{ width:"100%", background:loading?"#21262d":"linear-gradient(135deg,#e85d04,#f48c06)", color:"#fff", border:"none", borderRadius:7, padding:"11px 0", fontSize:14, fontWeight:700, cursor:loading?"not-allowed":"pointer" }}>
+        <button onClick={handleLogin} disabled={loading} style={{ width:"100%", background:loading?"#21262d":"linear-gradient(135deg,#e85d04,#f48c06)", color:"#fff", border:"none", borderRadius:7, padding:"11px 0", fontSize:14, fontWeight:700, cursor:loading?"not-allowed":"pointer" }}>
           {loading ? "로그인 중..." : "로그인"}
         </button>
         <div style={{ marginTop:14, fontSize:11, color:"#6e7681", textAlign:"center" }}>계정이 없으면 관리자에게 문의하세요</div>
@@ -541,17 +479,17 @@ function LoginPage({ onLogin }) {
 
 // ── 관리자 페이지 ──
 function AdminPage({ user, onBack }) {
-  const [users, setUsers]         = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [newEmail, setNewEmail]   = useState("");
-  const [newName, setNewName]     = useState("");
-  const [newPw, setNewPw]         = useState("");
-  const [creating, setCreating]   = useState(false);
-  const [error, setError]         = useState("");
-  const [success, setSuccess]     = useState("");
-
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [newEmail, setNewEmail] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [assigning, setAssigning] = useState(false);
+  const [assignResult, setAssignResult] = useState("");
   useEffect(() => { loadUsers(); }, []);
-
   async function loadUsers() {
     setLoading(true);
     try {
@@ -560,36 +498,74 @@ function AdminPage({ user, onBack }) {
     } catch(e) { setError(e.message); }
     finally { setLoading(false); }
   }
-
   async function createUser() {
     if (!newEmail || !newPw || !newName) { setError("이름, 이메일, 비밀번호 모두 입력하세요"); return; }
     setCreating(true); setError(""); setSuccess("");
     try {
-      // 1. allowed_users에 추가
       await sbFetch("allowed_users", { method:"POST", body:JSON.stringify({ email:newEmail, name:newName }) }, user.token);
-      // 2. Supabase Auth에 계정 생성 시도 (실패해도 allowed_users는 추가됨)
-      try {
-        await sbAdminCreateUser(newEmail, newPw, user.token);
-      } catch(e) {
-        // admin API 권한 없으면 일반 signup으로 fallback
-        await sbAuth("signup", newEmail, newPw);
-      }
+      try { await sbAdminCreateUser(newEmail, newPw, user.token); }
+      catch(e) { await sbAuth("signup", newEmail, newPw); }
       setSuccess(`✅ ${newName} (${newEmail}) 계정 생성 완료! 비밀번호: ${newPw}`);
       setNewEmail(""); setNewName(""); setNewPw("");
       loadUsers();
-    } catch(e) {
-      setError(e.message);
-    } finally {
-      setCreating(false);
-    }
+    } catch(e) { setError(e.message); }
+    finally { setCreating(false); }
   }
-
   async function deleteUser(email) {
     if (!window.confirm(`${email} 계정을 삭제할까요?`)) return;
     try {
       await sbFetch(`allowed_users?email=eq.${encodeURIComponent(email)}`, { method:"DELETE" }, user.token);
       loadUsers();
     } catch(e) { setError(e.message); }
+  }
+
+  // 오늘의 매물 배정 함수
+  async function assignTodayLeads() {
+    setAssigning(true); setAssignResult("");
+    try {
+      const agents = users.filter(u => !ADMIN_EMAILS.includes(u.email));
+      if (agents.length === 0) { setAssignResult("배정할 직원이 없습니다."); return; }
+
+      // 당근 매물만 + 미배정 + 신규 + 연락처있음만
+      const candidates = await sbFetch(
+        "property_leads?select=id,phone,assigned_agent,source&status=eq.new&assigned_agent=is.null&source=eq.daangn&phone=not.is.null&order=collected_at.desc&limit=500",
+        {}, user.token
+      );
+      const pool = [...candidates];
+
+      if (pool.length === 0) { setAssignResult("배정 가능한 당근 연락처 매물이 없습니다."); return; }
+
+      const shuffled = [...pool].sort(() => Math.random() - 0.5);
+      const totalAvailable = shuffled.length;
+
+      let totalAssigned = 0;
+      for (const agent of agents) {
+        const chunk = shuffled.splice(0, 7);
+        if (chunk.length === 0) break;
+        for (const lead of chunk) {
+          await sbFetch(`property_leads?id=eq.${lead.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ assigned_agent: agent.name })
+          }, user.token);
+          totalAssigned++;
+        }
+      }
+      const perAgent = Math.min(7, Math.floor(totalAvailable / agents.length));
+      const msg = totalAssigned < agents.length * 7
+        ? `✅ 연락처 있는 매물 ${totalAvailable}건 → ${agents.length}명에게 총 ${totalAssigned}건 배정 완료! (1인당 최대 ${perAgent}건)`
+        : `✅ ${agents.length}명에게 당근 연락처 매물 총 ${totalAssigned}건 배정 완료!`;
+      setAssignResult(msg);
+    } catch(e) { setAssignResult("오류: " + e.message); }
+    finally { setAssigning(false); }
+  }
+
+  // 배정 초기화
+  async function resetAssignments() {
+    if (!window.confirm("오늘 배정을 모두 초기화할까요?")) return;
+    try {
+      await sbFetch("property_leads?assigned_agent=not.is.null", { method:"PATCH", body:JSON.stringify({ assigned_agent: null }) }, user.token);
+      setAssignResult("배정 초기화 완료");
+    } catch(e) { setAssignResult("오류: " + e.message); }
   }
 
   return (
@@ -602,39 +578,33 @@ function AdminPage({ user, onBack }) {
         </div>
         <span style={{ fontSize:12, color:"#6e7681" }}>👤 {user.name}</span>
       </div>
+      <div style={{ maxWidth:640, margin:"40px auto", padding:"0 20px" }}>
 
-      <div style={{ maxWidth:600, margin:"40px auto", padding:"0 20px" }}>
+        {/* 오늘의 매물 배정 */}
+        <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:24, marginBottom:24 }}>
+          <div style={{ fontWeight:700, fontSize:15, marginBottom:8 }}>📋 오늘의 매물 배정</div>
+          <div style={{ fontSize:12, color:"#6e7681", marginBottom:16 }}>직원 1인당 7개씩, 연락처 있는 매물 우선 랜덤 배정</div>
+          {assignResult && <div style={{ background: assignResult.startsWith("✅")?"#052e16":"#2d0f0f", border:`1px solid ${assignResult.startsWith("✅")?"#16a34a":"#7f1d1d"}`, borderRadius:6, padding:"10px 12px", fontSize:12, color: assignResult.startsWith("✅")?"#86efac":"#fca5a5", marginBottom:12 }}>{assignResult}</div>}
+          <div style={{ display:"flex", gap:8 }}>
+            <button onClick={assignTodayLeads} disabled={assigning}
+              style={{ background:assigning?"#21262d":"linear-gradient(135deg,#e85d04,#f48c06)", color:"#fff", border:"none", borderRadius:7, padding:"10px 20px", fontSize:13, fontWeight:700, cursor:assigning?"not-allowed":"pointer" }}>
+              {assigning ? "배정 중..." : "🎲 오늘의 매물 배정"}
+            </button>
+            <button onClick={resetAssignments} style={{ background:"transparent", border:"1px solid #7f1d1d", color:"#fca5a5", borderRadius:7, padding:"10px 16px", fontSize:12, cursor:"pointer" }}>초기화</button>
+          </div>
+        </div>
+
         {/* 계정 생성 */}
         <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:24, marginBottom:24 }}>
           <div style={{ fontWeight:700, fontSize:15, marginBottom:18 }}>새 계정 생성</div>
-
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:12 }}>
-            <div>
-              <div style={{ fontSize:11, color:"#6e7681", marginBottom:6 }}>이름</div>
-              <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="홍길동"
-                style={{ width:"100%", boxSizing:"border-box", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:"#e6edf3", fontSize:12, outline:"none" }}
-              />
-            </div>
-            <div>
-              <div style={{ fontSize:11, color:"#6e7681", marginBottom:6 }}>이메일</div>
-              <input value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="email@gmail.com"
-                style={{ width:"100%", boxSizing:"border-box", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:"#e6edf3", fontSize:12, outline:"none" }}
-              />
-            </div>
+            <div><div style={{ fontSize:11, color:"#6e7681", marginBottom:6 }}>이름</div><input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="홍길동" style={{ width:"100%", boxSizing:"border-box", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:"#e6edf3", fontSize:12, outline:"none" }}/></div>
+            <div><div style={{ fontSize:11, color:"#6e7681", marginBottom:6 }}>이메일</div><input value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="email@gmail.com" style={{ width:"100%", boxSizing:"border-box", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:"#e6edf3", fontSize:12, outline:"none" }}/></div>
           </div>
-
-          <div style={{ marginBottom:16 }}>
-            <div style={{ fontSize:11, color:"#6e7681", marginBottom:6 }}>임시 비밀번호</div>
-            <input value={newPw} onChange={e=>setNewPw(e.target.value)} placeholder="임시 비밀번호 (6자 이상)"
-              style={{ width:"100%", boxSizing:"border-box", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:"#e6edf3", fontSize:12, outline:"none" }}
-            />
-          </div>
-
+          <div style={{ marginBottom:16 }}><div style={{ fontSize:11, color:"#6e7681", marginBottom:6 }}>임시 비밀번호</div><input value={newPw} onChange={e=>setNewPw(e.target.value)} placeholder="임시 비밀번호 (6자 이상)" style={{ width:"100%", boxSizing:"border-box", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"8px 10px", color:"#e6edf3", fontSize:12, outline:"none" }}/></div>
           {error && <div style={{ background:"#2d0f0f", border:"1px solid #7f1d1d", borderRadius:6, padding:"8px 12px", fontSize:12, color:"#fca5a5", marginBottom:12 }}>{error}</div>}
           {success && <div style={{ background:"#052e16", border:"1px solid #16a34a", borderRadius:6, padding:"10px 12px", fontSize:12, color:"#86efac", marginBottom:12, lineHeight:1.6 }}>{success}</div>}
-
-          <button onClick={createUser} disabled={creating}
-            style={{ background:creating?"#21262d":"linear-gradient(135deg,#e85d04,#f48c06)", color:"#fff", border:"none", borderRadius:7, padding:"10px 20px", fontSize:13, fontWeight:700, cursor:creating?"not-allowed":"pointer" }}>
+          <button onClick={createUser} disabled={creating} style={{ background:creating?"#21262d":"linear-gradient(135deg,#e85d04,#f48c06)", color:"#fff", border:"none", borderRadius:7, padding:"10px 20px", fontSize:13, fontWeight:700, cursor:creating?"not-allowed":"pointer" }}>
             {creating ? "생성 중..." : "계정 생성"}
           </button>
         </div>
@@ -642,22 +612,20 @@ function AdminPage({ user, onBack }) {
         {/* 사용자 목록 */}
         <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:24 }}>
           <div style={{ fontWeight:700, fontSize:15, marginBottom:18 }}>허용된 사용자 ({users.length}명)</div>
-          {loading ? (
-            <div style={{ color:"#6e7681", fontSize:13 }}>로딩 중...</div>
-          ) : (
+          {loading ? <div style={{ color:"#6e7681", fontSize:13 }}>로딩 중...</div> : (
             users.map(u => (
               <div key={u.email} style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 12px", background:"#0d1117", borderRadius:7, marginBottom:6 }}>
-                <div>
-                  <div style={{ fontSize:13, fontWeight:600, color:"#e6edf3" }}>{u.name}</div>
-                  <div style={{ fontSize:11, color:"#6e7681", marginTop:2 }}>{u.email}</div>
+                <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                  <div style={{ width:28, height:28, borderRadius:"50%", background:getAgentColor(u.name), display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:700, color:"#fff", flexShrink:0 }}>{u.name?.slice(0,1)}</div>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:600, color:"#e6edf3" }}>{u.name}</div>
+                    <div style={{ fontSize:11, color:"#6e7681", marginTop:2 }}>{u.email}</div>
+                  </div>
                 </div>
                 <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                   {ADMIN_EMAILS.includes(u.email) && <span style={{ fontSize:10, color:"#f48c06", background:"#2d1f00", padding:"2px 8px", borderRadius:10 }}>관리자</span>}
                   {!ADMIN_EMAILS.includes(u.email) && (
-                    <button onClick={()=>deleteUser(u.email)}
-                      style={{ background:"none", border:"1px solid #7f1d1d", color:"#fca5a5", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer" }}>
-                      삭제
-                    </button>
+                    <button onClick={()=>deleteUser(u.email)} style={{ background:"none", border:"1px solid #7f1d1d", color:"#fca5a5", borderRadius:6, padding:"4px 10px", fontSize:11, cursor:"pointer" }}>삭제</button>
                   )}
                 </div>
               </div>
@@ -689,6 +657,12 @@ function DetailPanel({ lead, note, setNote, onClose, onStatus, onSave, saving, u
         <button onClick={onClose} style={{ background:"none", border:"none", color:"#8b949e", cursor:"pointer", fontSize:16, flexShrink:0, marginLeft:6 }}>✕</button>
       </div>
       <div style={{ flex:1, overflowY:"auto", padding:14 }}>
+        {lead.assigned_agent && (
+          <div style={{ display:"flex", alignItems:"center", gap:6, background:getAgentColor(lead.assigned_agent)+"22", border:`1px solid ${getAgentColor(lead.assigned_agent)}44`, borderRadius:6, padding:"6px 10px", marginBottom:10 }}>
+            <div style={{ width:20, height:20, borderRadius:"50%", background:getAgentColor(lead.assigned_agent), display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700, color:"#fff" }}>{lead.assigned_agent.slice(0,1)}</div>
+            <span style={{ fontSize:11, color:getAgentColor(lead.assigned_agent), fontWeight:700 }}>{lead.assigned_agent} 담당</span>
+          </div>
+        )}
         <div style={{ background:"#0d1117", borderRadius:8, overflow:"hidden", marginBottom:12 }}>
           {rows.map(({ label, value }, i) => (
             <div key={label} style={{ display:"grid", gridTemplateColumns:"60px 1fr", padding:"9px 12px", borderBottom:i<rows.length-1?"1px solid #21262d":"none", alignItems:"start" }}>
@@ -722,9 +696,8 @@ function DetailPanel({ lead, note, setNote, onClose, onStatus, onSave, saving, u
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:5 }}>
             {Object.entries(STATUS_CONFIG).map(([key, cfg]) => {
               const isLocked = lead.assigned_to && lead.assigned_to !== user?.name && !user?.isAdmin;
-              const disabled = isLocked;
               return (
-                <button key={key} onClick={()=>!disabled&&onStatus(key)} style={{ padding:"6px 0", borderRadius:6, cursor:disabled?"not-allowed":"pointer", border:`1px solid ${lead.status===key?cfg.color:"#30363d"}`, background:lead.status===key?cfg.bg:"transparent", color:disabled?"#333":lead.status===key?cfg.color:"#6e7681", fontSize:11, fontWeight:lead.status===key?700:400, opacity:disabled?0.4:1 }}>
+                <button key={key} onClick={()=>!isLocked&&onStatus(key)} style={{ padding:"6px 0", borderRadius:6, cursor:isLocked?"not-allowed":"pointer", border:`1px solid ${lead.status===key?cfg.color:"#30363d"}`, background:lead.status===key?cfg.bg:"transparent", color:isLocked?"#333":lead.status===key?cfg.color:"#6e7681", fontSize:11, fontWeight:lead.status===key?700:400, opacity:isLocked?0.4:1 }}>
                   {cfg.label}
                 </button>
               );
@@ -733,9 +706,7 @@ function DetailPanel({ lead, note, setNote, onClose, onStatus, onSave, saving, u
         </div>
         <div>
           <div style={{ fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px", marginBottom:7 }}>통화 메모</div>
-          <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="통화 내용, 소유자 반응, 특이사항..."
-            style={{ width:"100%", boxSizing:"border-box", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"9px 10px", color:"#e6edf3", fontSize:12, minHeight:90, resize:"vertical", outline:"none", fontFamily:"inherit", lineHeight:1.6 }}
-          />
+          <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="통화 내용, 소유자 반응, 특이사항..." style={{ width:"100%", boxSizing:"border-box", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"9px 10px", color:"#e6edf3", fontSize:12, minHeight:90, resize:"vertical", outline:"none", fontFamily:"inherit", lineHeight:1.6 }}/>
           <button onClick={onSave} disabled={saving} style={{ marginTop:6, width:"100%", background:"#21262d", border:"1px solid #30363d", color:saving?"#6e7681":"#c9d1d9", padding:"8px 0", borderRadius:6, fontSize:12, cursor:saving?"not-allowed":"pointer", fontWeight:600 }}>
             {saving?"저장 중...":"저장"}
           </button>
@@ -747,30 +718,48 @@ function DetailPanel({ lead, note, setNote, onClose, onStatus, onSave, saving, u
 
 // ── 메인 대시보드 ──
 function Dashboard({ user, onLogout, onAdmin }) {
-  const [leads, setLeads]         = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState(null);
-  const [filter, setFilter]       = useState("all");
+  const [leads, setLeads] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [filter, setFilter] = useState("all");
   const [srcFilter, setSrcFilter] = useState("all");
   const [areaFilter, setAreaFilter] = useState("all");
   const [phoneFilter, setPhoneFilter] = useState("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
-  const [search, setSearch]       = useState("");
-  const [selected, setSelected]   = useState(null);
-  const [note, setNote]           = useState("");
-  const [saving, setSaving]       = useState(false);
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState(null);
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
-  const [view, setView] = useState("list"); // "list" | "stats"
+  const [view, setView] = useState("list");
 
   const loadLeads = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const data = await sbFetch("property_leads?select=*&order=collected_at.desc&limit=10000", {}, user.token);
+      let data;
+      if (user.isAdmin) {
+        // 관리자: 전체 조회
+        const [d1, d2] = await Promise.all([
+          sbFetch("property_leads?select=*&status=in.(new,callback,rejected,duplicate)&order=collected_at.desc&limit=2000", {}, user.token),
+          sbFetch("property_leads?select=*&status=in.(called,acquired)&order=collected_at.desc", {}, user.token),
+        ]);
+        data = [...(Array.isArray(d1)?d1:[]), ...(Array.isArray(d2)?d2:[])];
+      } else {
+        // 직원: 본인 배정 매물 + 본인 확보 매물
+        const [d1, d2] = await Promise.all([
+          sbFetch(`property_leads?select=*&assigned_agent=eq.${encodeURIComponent(user.name)}&order=collected_at.desc`, {}, user.token),
+          sbFetch(`property_leads?select=*&assigned_to=eq.${encodeURIComponent(user.name)}&status=eq.acquired&order=collected_at.desc`, {}, user.token),
+        ]);
+        const merged = [...(Array.isArray(d1)?d1:[]), ...(Array.isArray(d2)?d2:[])];
+        // 중복 제거
+        const seen = new Set();
+        data = merged.filter(l => { if (seen.has(l.id)) return false; seen.add(l.id); return true; });
+      }
       setLeads(Array.isArray(data) ? data : []);
       setLastRefresh(new Date());
     } catch(e) { setError(e.message); }
     finally { setLoading(false); }
-  }, [user.token]);
+  }, [user.token, user.isAdmin, user.name]);
 
   useEffect(() => { loadLeads(); }, [loadLeads]);
 
@@ -811,12 +800,10 @@ function Dashboard({ user, onLogout, onAdmin }) {
   const acquiredAssignees = Array.from(new Set(leads.filter(l=>l.status==="acquired" && l.assigned_to).map(l=>l.assigned_to)));
 
   async function updateStatus(newStatus) {
-    // 다른 사람이 물건확보한 경우 차단 (관리자 제외)
     if (selected.assigned_to && selected.assigned_to !== user.name && !user.isAdmin) {
       alert(selected.assigned_to + "님이 이미 확보한 매물입니다.");
       return;
     }
-    // 물건확보 취소 시 본인 확인
     if (selected.status === "acquired" && newStatus !== "acquired") {
       if (selected.assigned_to !== user.name && !user.isAdmin) {
         alert("본인이 확보한 매물만 변경할 수 있습니다.");
@@ -846,37 +833,62 @@ function Dashboard({ user, onLogout, onAdmin }) {
   return (
     <div style={{ fontFamily:"'Noto Sans KR',sans-serif", background:"#0d1117", minHeight:"100vh", color:"#e6edf3" }}>
       <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet"/>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}} *::-webkit-scrollbar{width:4px} *::-webkit-scrollbar-track{background:#0d1117} *::-webkit-scrollbar-thumb{background:#30363d;border-radius:2px}`}</style>
+      <style>{`
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+        *::-webkit-scrollbar{width:4px}
+        *::-webkit-scrollbar-track{background:#0d1117}
+        *::-webkit-scrollbar-thumb{background:#30363d;border-radius:2px}
+        .header-wrap{background:#161b22;border-bottom:1px solid #21262d;padding:8px 12px;display:flex;flex-direction:column;gap:6px;}
+        .header-top{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+        .header-left{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+        .header-right{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
+        .tab-bar{display:flex;gap:4px;overflow-x:auto;padding-bottom:2px;-webkit-overflow-scrolling:touch;}
+        .tab-bar::-webkit-scrollbar{height:0;}
+        .tab-btn{background:transparent;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:5px 10px;font-size:11px;cursor:pointer;white-space:nowrap;flex-shrink:0;}
+        .tab-btn.active{background:#21262d;color:#e6edf3;font-weight:700;}
+        .sidebar{width:148px;background:#161b22;border-right:1px solid #21262d;padding:14px 0;flex-shrink:0;overflow-y:auto;}
+        .main-layout{display:flex;height:calc(100vh - 88px);}
+        .refresh-btn{background:linear-gradient(135deg,#e85d04,#f48c06);color:#fff;border:none;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;}
+        .refresh-btn:disabled{background:#21262d;cursor:not-allowed;}
+        .site-title{font-weight:700;font-size:13px;white-space:nowrap;}
+        @media(max-width:640px){.sidebar{width:110px;}}
+      `}</style>
 
-      <div style={{ background:"#161b22", borderBottom:"1px solid #21262d", padding:"0 20px", display:"flex", alignItems:"center", justifyContent:"space-between", height:52 }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <div style={{ width:26, height:26, background:"linear-gradient(135deg,#e85d04,#f48c06)", borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700 }}>V</div>
-          <span style={{ fontWeight:700, fontSize:14 }}>Verita 매물 수집</span>
-          <span style={{ fontSize:10, color:"#22c55e", background:"#052e16", padding:"2px 8px", borderRadius:10, border:"1px solid #16a34a" }}>● Live</span>
-          <div style={{ display:"flex", gap:4, marginLeft:8 }}>
-            <button onClick={()=>setView("list")} style={{ background:view==="list"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="list"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="list"?700:400 }}>📋 매물목록</button>
-            <button onClick={()=>setView("stats")} style={{ background:view==="stats"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="stats"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="stats"?700:400 }}>📊 통계</button>
-            <button onClick={()=>setView("briefing")} style={{ background:view==="briefing"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="briefing"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="briefing"?700:400 }}>📅 브리핑</button>
-            <button onClick={()=>setView("watermark")} style={{ background:view==="watermark"?"#21262d":"transparent", border:"1px solid #30363d", color:view==="watermark"?"#e6edf3":"#8b949e", borderRadius:6, padding:"5px 12px", fontSize:12, cursor:"pointer", fontWeight:view==="watermark"?700:400 }}>🧹 워터마크 제거</button>
+      <div className="header-wrap">
+        <div className="header-top">
+          <div className="header-left">
+            <div style={{ width:26, height:26, background:"linear-gradient(135deg,#e85d04,#f48c06)", borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700, flexShrink:0 }}>V</div>
+            <span className="site-title">Verita 매물 수집</span>
+            <span style={{ fontSize:10, color:"#22c55e", background:"#052e16", padding:"2px 6px", borderRadius:10, border:"1px solid #16a34a", whiteSpace:"nowrap" }}>● Live</span>
+          </div>
+          <div className="header-right">
+            {lastRefresh && <span style={{ fontSize:10, color:"#6e7681", whiteSpace:"nowrap" }}>{lastRefresh.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}</span>}
+            {!user.isAdmin && <span style={{ fontSize:10, color:"#6e7681", whiteSpace:"nowrap" }}>내 담당 {leads.length}건</span>}
+            <span style={{ fontSize:11, color:"#8b949e", whiteSpace:"nowrap" }}>👤 {user.name}</span>
+            {user.isAdmin && <button onClick={onAdmin} style={{ background:"#21262d", border:"1px solid #30363d", color:"#f48c06", borderRadius:6, padding:"5px 8px", fontSize:11, cursor:"pointer", fontWeight:600, whiteSpace:"nowrap" }}>⚙️</button>}
+            <button onClick={loadLeads} disabled={loading} className="refresh-btn">
+              <span style={{ display:"inline-block", animation:loading?"spin 1s linear infinite":"none" }}>⟳</span>
+              {loading?" 로딩...":" 새로고침"}
+            </button>
+            <button onClick={onLogout} style={{ background:"none", border:"1px solid #30363d", color:"#8b949e", borderRadius:6, padding:"5px 8px", fontSize:11, cursor:"pointer", whiteSpace:"nowrap" }}>로그아웃</button>
           </div>
         </div>
-        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          {lastRefresh && <span style={{ fontSize:11, color:"#6e7681" }}>갱신 {lastRefresh.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}</span>}
-          <span style={{ fontSize:12, color:"#8b949e" }}>👤 {user.name}</span>
-          {user.isAdmin && (
-            <button onClick={onAdmin} style={{ background:"#21262d", border:"1px solid #30363d", color:"#f48c06", borderRadius:6, padding:"6px 12px", fontSize:12, cursor:"pointer", fontWeight:600 }}>
-              ⚙️ 관리자
-            </button>
-          )}
-          <button onClick={loadLeads} disabled={loading} style={{ background:loading?"#21262d":"linear-gradient(135deg,#e85d04,#f48c06)", color:"#fff", border:"none", borderRadius:6, padding:"6px 13px", fontSize:12, fontWeight:600, cursor:loading?"not-allowed":"pointer", display:"flex", alignItems:"center", gap:5 }}>
-            <span style={{ display:"inline-block", animation:loading?"spin 1s linear infinite":"none" }}>⟳</span>
-            {loading?"불러오는 중...":"목록 새로고침"}
-          </button>
-          <button onClick={onLogout} style={{ background:"none", border:"1px solid #30363d", color:"#8b949e", borderRadius:6, padding:"6px 12px", fontSize:12, cursor:"pointer" }}>로그아웃</button>
+        <div className="tab-bar">
+          <button className={"tab-btn"+(view==="list"?" active":"")} onClick={()=>setView("list")}>📋 매물목록</button>
+          <button className={"tab-btn"+(view==="stats"?" active":"")} onClick={()=>setView("stats")}>📊 통계</button>
+          <button className={"tab-btn"+(view==="briefing"?" active":"")} onClick={()=>setView("briefing")}>📅 브리핑</button>
+          <button className={"tab-btn"+(view==="watermark"?" active":"")} onClick={()=>setView("watermark")}>🧹 워터마크</button>
         </div>
       </div>
 
       {error && <div style={{ background:"#2d0f0f", borderBottom:"1px solid #7f1d1d", padding:"8px 20px", fontSize:12, color:"#fca5a5" }}>⚠️ {error}</div>}
+
+      {!user.isAdmin && (
+        <div style={{ background:"#0d1117", borderBottom:"1px solid #21262d", padding:"8px 16px", fontSize:12, color:"#6e7681" }}>
+          📌 배정된 매물 <strong style={{ color:"#f48c06" }}>{leads.filter(l=>l.assigned_agent===user.name).length}건</strong> + 내가 확보한 매물 <strong style={{ color:"#a78bfa" }}>{leads.filter(l=>l.assigned_to===user.name).length}건</strong>
+        </div>
+      )}
 
       {view === "stats" ? (
         <StatsPanel leads={leads} today={today} />
@@ -885,8 +897,8 @@ function Dashboard({ user, onLogout, onAdmin }) {
       ) : view === "watermark" ? (
         <WatermarkRemoverPanel />
       ) : (
-      <div style={{ display:"flex", height:"calc(100vh - 52px)" }}>
-        <div style={{ width:148, background:"#161b22", borderRight:"1px solid #21262d", padding:"14px 0", flexShrink:0, overflowY:"auto" }}>
+      <div className="main-layout">
+        <div className="sidebar">
           <div style={{ padding:"0 12px 8px", fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px" }}>상태</div>
           {[["all","전체",leads.length],...Object.entries(STATUS_CONFIG).map(([k,v])=>[k,v.label,counts[k]])].map(([key,label,count])=>(
             <div key={key}>
@@ -928,14 +940,17 @@ function Dashboard({ user, onLogout, onAdmin }) {
               <span style={{ fontSize:10, background:phoneFilter===key?"#30363d":"transparent", padding:"1px 6px", borderRadius:8, color:phoneFilter===key?"#e6edf3":"#6e7681" }}>{count}</span>
             </button>
           ))}
-          <div style={{ margin:"12px 12px 8px", height:1, background:"#21262d" }}/>
-          <div style={{ padding:"0 12px 8px", fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px" }}>지역</div>
-          {[["all","전체"],...AREAS].map(([key,label])=>(
-            <button key={key} onClick={()=>setAreaFilter(key)}
-              style={{ width:"100%", textAlign:"left", padding:"6px 12px", background:areaFilter===key?"#21262d":"transparent", border:"none", color:areaFilter===key?"#e6edf3":"#8b949e", fontSize:12, cursor:"pointer" }}>
-              {label}
-            </button>
-          ))}
+          {user.isAdmin && (
+            <>
+              <div style={{ margin:"12px 12px 8px", height:1, background:"#21262d" }}/>
+              <div style={{ padding:"0 12px 8px", fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px" }}>지역</div>
+              {[["all","전체"],...AREAS].map(([key,label])=>(
+                <button key={key} onClick={()=>setAreaFilter(key)} style={{ width:"100%", textAlign:"left", padding:"6px 12px", background:areaFilter===key?"#21262d":"transparent", border:"none", color:areaFilter===key?"#e6edf3":"#8b949e", fontSize:12, cursor:"pointer" }}>
+                  {label}
+                </button>
+              ))}
+            </>
+          )}
         </div>
 
         <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
@@ -946,18 +961,26 @@ function Dashboard({ user, onLogout, onAdmin }) {
           </div>
           <div style={{ flex:1, overflowY:"auto", padding:"6px" }}>
             {loading && <div style={{ textAlign:"center", padding:"60px 0", color:"#6e7681" }}><div style={{ fontSize:24, animation:"spin 1s linear infinite", display:"inline-block" }}>⟳</div><div style={{ marginTop:8, fontSize:13 }}>불러오는 중...</div></div>}
-            {!loading && filtered.length===0 && <div style={{ textAlign:"center", padding:"60px 0", color:"#6e7681", fontSize:13 }}>데이터 없음</div>}
+            {!loading && filtered.length===0 && (
+              <div style={{ textAlign:"center", padding:"60px 0", color:"#6e7681", fontSize:13 }}>
+                {!user.isAdmin ? "아직 배정된 매물이 없습니다.\n관리자에게 배정을 요청하세요." : "데이터 없음"}
+              </div>
+            )}
             {!loading && filtered.map((lead,i)=>{
               const src=SOURCES[lead.source]||{label:lead.source,color:"#555"};
               const st=STATUS_CONFIG[lead.status]||STATUS_CONFIG.new;
               const active=selected?.id===lead.id;
               const isNew = lead.collected_at?.startsWith(today);
+              const agentColor = getAgentColor(lead.assigned_agent);
               return (
                 <div key={lead.id} onClick={()=>{setSelected(lead);setNote(lead.note||"");}}
                   style={{ background:active?"#1c2128":"#161b22", border:`1px solid ${isNew&&!active?"#f48c0644":active?"#388bfd44":"#21262d"}`, borderRadius:7, padding:"10px 12px", marginBottom:4, cursor:"pointer", transition:"background 0.12s", animation:`fadeIn 0.18s ease ${Math.min(i,20)*0.02}s both` }}>
                   <div style={{ display:"flex", alignItems:"center", gap:7, marginBottom:6 }}>
                     <span style={{ background:src.color, color:"#fff", fontSize:9, fontWeight:700, padding:"2px 6px", borderRadius:3, whiteSpace:"nowrap", flexShrink:0 }}>{src.label}</span>
                     {isNew && <span style={{ background:"#f48c06", color:"#fff", fontSize:9, fontWeight:800, padding:"2px 6px", borderRadius:3, whiteSpace:"nowrap", flexShrink:0, letterSpacing:"0.5px" }}>NEW</span>}
+                    {lead.assigned_agent && (
+                      <span style={{ background:agentColor, color:"#fff", fontSize:9, fontWeight:700, padding:"2px 6px", borderRadius:3, whiteSpace:"nowrap", flexShrink:0 }}>{lead.assigned_agent}</span>
+                    )}
                     <span style={{ fontSize:12, fontWeight:600, color:"#e6edf3", flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{lead.title}</span>
                     <span style={{ background:st.bg, color:st.color, fontSize:10, fontWeight:600, padding:"2px 7px", borderRadius:10, whiteSpace:"nowrap", flexShrink:0 }}>{st.label}</span>
                     <span style={{ fontSize:10, color:"#6e7681", whiteSpace:"nowrap", flexShrink:0 }}>{timeAgo(lead.collected_at)}</span>
@@ -985,8 +1008,6 @@ function Dashboard({ user, onLogout, onAdmin }) {
 export default function App() {
   const [user, setUser] = useState(() => { try { return JSON.parse(localStorage.getItem("verita_user")); } catch { return null; } });
   const [page, setPage] = useState("dashboard");
-
-  // 토큰 만료 감지 (1시간마다 체크)
   useEffect(() => {
     if (!user) return;
     async function refreshToken() {
@@ -1003,25 +1024,14 @@ export default function App() {
         const updated = { ...saved, token: data.access_token, refresh_token: data.refresh_token };
         localStorage.setItem("verita_user", JSON.stringify(updated));
         setUser(updated);
-      } catch {
-        handleLogout();
-      }
+      } catch { handleLogout(); }
     }
     refreshToken();
-    const interval = setInterval(refreshToken, 50 * 60 * 1000); // 50분마다
+    const interval = setInterval(refreshToken, 50 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
-
-  function handleLogin(userData) {
-    localStorage.setItem("verita_user", JSON.stringify(userData));
-    setUser(userData);
-  }
-
-  function handleLogout() {
-    localStorage.removeItem("verita_user");
-    setUser(null); setPage("dashboard");
-  }
-
+  function handleLogin(userData) { localStorage.setItem("verita_user", JSON.stringify(userData)); setUser(userData); }
+  function handleLogout() { localStorage.removeItem("verita_user"); setUser(null); setPage("dashboard"); }
   if (!user) return <LoginPage onLogin={handleLogin} />;
   if (page === "admin" && user.isAdmin) return <AdminPage user={user} onBack={()=>setPage("dashboard")} />;
   return <Dashboard user={user} onLogout={handleLogout} onAdmin={()=>setPage("admin")} />;
