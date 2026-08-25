@@ -657,7 +657,7 @@ function AdminPage({ user, onBack }) {
 }
 
 // ── 상세 패널 ──
-function DetailPanel({ lead, note, setNote, onClose, onStatus, onSave, saving, user }) {
+function DetailPanel({ lead, note, setNote, onClose, onStatus, onSave, saving, user, members, onAssign }) {
   const src = SOURCES[lead.source] || { label: lead.source, color: "#555" };
   const rows = [
     { label: "지번주소", value: lead.address_jibun || lead.address_raw?.slice(0,60) || "-" },
@@ -682,6 +682,26 @@ function DetailPanel({ lead, note, setNote, onClose, onStatus, onSave, saving, u
             <span style={{ fontSize:11, color:getAgentColor(lead.assigned_agent), fontWeight:700 }}>{lead.assigned_agent} 담당</span>
           </div>
         )}
+
+        {/* 관리자 전용 직원 배정 */}
+        {user.isAdmin && (
+          <div style={{ marginBottom:12, background:"#0d1117", borderRadius:8, padding:"10px 12px" }}>
+            <div style={{ fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px", marginBottom:7 }}>👤 직원 배정</div>
+            <div style={{ display:"flex", gap:6 }}>
+              <select
+                value={lead.assigned_agent || ""}
+                onChange={e => onAssign(lead.id, e.target.value || null)}
+                style={{ flex:1, background:"#161b22", border:"1px solid #30363d", borderRadius:6, padding:"6px 8px", color:"#e6edf3", fontSize:12, cursor:"pointer" }}
+              >
+                <option value="">배정 안 함</option>
+                {(members||[]).filter(m=>!ADMIN_EMAILS.includes(m.email)).map(m=>(
+                  <option key={m.email} value={m.name}>{m.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
         <div style={{ background:"#0d1117", borderRadius:8, overflow:"hidden", marginBottom:12 }}>
           {rows.map(({ label, value }, i) => (
             <div key={label} style={{ display:"grid", gridTemplateColumns:"60px 1fr", padding:"9px 12px", borderBottom:i<rows.length-1?"1px solid #21262d":"none", alignItems:"start" }}>
@@ -724,7 +744,15 @@ function DetailPanel({ lead, note, setNote, onClose, onStatus, onSave, saving, u
           </div>
         </div>
         <div>
-          <div style={{ fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px", marginBottom:7 }}>통화 메모</div>
+          <div style={{ fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px", marginBottom:7 }}>
+            통화 메모 {!user.isAdmin && lead.note && <span style={{ color:"#f48c06", fontSize:9, marginLeft:4 }}>관리자 메모 포함</span>}
+          </div>
+          {/* 직원은 메모 읽기 전용으로 표시 후 추가 입력 가능 */}
+          {!user.isAdmin && lead.note && (
+            <div style={{ background:"#1a1206", border:"1px solid #f48c0633", borderRadius:6, padding:"8px 10px", fontSize:12, color:"#f48c06", lineHeight:1.6, marginBottom:8 }}>
+              💬 {lead.note}
+            </div>
+          )}
           <textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="통화 내용, 소유자 반응, 특이사항..." style={{ width:"100%", boxSizing:"border-box", background:"#0d1117", border:"1px solid #30363d", borderRadius:6, padding:"9px 10px", color:"#e6edf3", fontSize:12, minHeight:90, resize:"vertical", outline:"none", fontFamily:"inherit", lineHeight:1.6 }}/>
           <button onClick={onSave} disabled={saving} style={{ marginTop:6, width:"100%", background:"#21262d", border:"1px solid #30363d", color:saving?"#6e7681":"#c9d1d9", padding:"8px 0", borderRadius:6, fontSize:12, cursor:saving?"not-allowed":"pointer", fontWeight:600 }}>
             {saving?"저장 중...":"저장"}
@@ -751,6 +779,15 @@ function Dashboard({ user, onLogout, onAdmin }) {
   const [saving, setSaving] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
   const [view, setView] = useState("list");
+  const [members, setMembers] = useState([]);
+
+  useEffect(() => {
+    if (user.isAdmin) {
+      sbFetch("allowed_users?select=email,name&order=name.asc", {}, user.token)
+        .then(d => setMembers(Array.isArray(d)?d:[]))
+        .catch(()=>{});
+    }
+  }, [user.token, user.isAdmin]);
 
   const loadLeads = useCallback(async () => {
     setLoading(true); setError(null);
@@ -837,6 +874,14 @@ function Dashboard({ user, onLogout, onAdmin }) {
       setLeads(p=>p.map(l=>l.id===selected.id?{...l,...patch}:l));
       setSelected(p=>({...p,...patch}));
     } catch(e) { alert("오류: "+e.message); }
+  }
+
+  async function assignAgent(leadId, agentName) {
+    try {
+      await sbFetch(`property_leads?id=eq.${leadId}`, { method:"PATCH", body:JSON.stringify({ assigned_agent: agentName }) }, user.token);
+      setLeads(p=>p.map(l=>l.id===leadId?{...l, assigned_agent:agentName}:l));
+      setSelected(p=>p?{...p, assigned_agent:agentName}:p);
+    } catch(e) { alert("배정 오류: "+e.message); }
   }
 
   async function saveNote() {
@@ -1016,7 +1061,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
             })}
           </div>
         </div>
-        {selected&&<DetailPanel lead={selected} note={note} setNote={setNote} onClose={()=>setSelected(null)} onStatus={updateStatus} onSave={saveNote} saving={saving} user={user}/>}
+        {selected&&<DetailPanel lead={selected} note={note} setNote={setNote} onClose={()=>setSelected(null)} onStatus={updateStatus} onSave={saveNote} saving={saving} user={user} members={members} onAssign={assignAgent}/>}
       </div>
       )}
     </div>
