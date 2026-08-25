@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import WatermarkRemoverPanel from "./WatermarkRemover";
 
 const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL;
 const SUPABASE_ANON = process.env.REACT_APP_SUPABASE_ANON;
@@ -111,24 +110,25 @@ function BarRow({ label, count, total, color }) {
   );
 }
 
-function StatsPanel({ leads, today }) {
-  const total = leads.length;
+function StatsPanel({ leads, allLeads, members }) {
+  const today = new Date().toISOString().slice(0,10);
+  const total = allLeads.length;
   const bySource = Object.keys(SOURCES).map(key => ({
     key, label: SOURCES[key].label, color: SOURCES[key].color,
-    count: leads.filter(l=>l.source===key).length,
+    count: allLeads.filter(l=>l.source===key).length,
   }));
   const byStatus = Object.keys(STATUS_CONFIG).map(key => ({
     key, label: STATUS_CONFIG[key].label, color: STATUS_CONFIG[key].color,
-    count: leads.filter(l=>l.status===key).length,
+    count: allLeads.filter(l=>l.status===key).length,
   }));
   const AREA_KEYS = ["노형동", "연동", "애월읍", "한림읍"];
   const byArea = AREA_KEYS.map(area => ({
     label: area,
-    count: leads.filter(l=>(l.address_jibun||l.address_raw||"").includes(area)).length,
+    count: allLeads.filter(l=>(l.address_jibun||l.address_raw||"").includes(area)).length,
   }));
   const otherArea = total - byArea.reduce((s,a)=>s+a.count,0);
   const assignees = {};
-  leads.forEach(l=>{ if (l.assigned_to) assignees[l.assigned_to] = (assignees[l.assigned_to]||0)+1; });
+  allLeads.forEach(l=>{ if (l.assigned_to) assignees[l.assigned_to] = (assignees[l.assigned_to]||0)+1; });
   const assigneeList = Object.entries(assignees).sort((a,b)=>b[1]-a[1]);
   const days = [];
   for (let i=6;i>=0;i--) {
@@ -136,13 +136,25 @@ function StatsPanel({ leads, today }) {
     d.setDate(d.getDate()-i);
     const key = d.toISOString().slice(0,10);
     const label = d.toLocaleDateString('ko-KR',{month:'numeric',day:'numeric'});
-    const count = leads.filter(l=>l.collected_at?.startsWith(key)).length;
+    const count = allLeads.filter(l=>l.collected_at?.startsWith(key)).length;
     days.push({ key, label, count });
   }
   const maxDayCount = Math.max(...days.map(d=>d.count), 1);
-  const withPhone = leads.filter(l=>!!l.phone).length;
-  const acquiredCount = leads.filter(l=>l.status==="acquired").length;
-  const todayCount = leads.filter(l=>l.collected_at?.startsWith(today)).length;
+  const withPhone = allLeads.filter(l=>!!l.phone).length;
+  const acquiredCount = allLeads.filter(l=>l.status==="acquired").length;
+  const todayCount = allLeads.filter(l=>l.collected_at?.startsWith(today)).length;
+
+  // 직원별 일자별 배정 현황 (최근 7일)
+  const agents = (members||[]).filter(m=>!ADMIN_EMAILS.includes(m.email));
+  const assignDays = [];
+  for (let i=6;i>=0;i--) {
+    const d = new Date();
+    d.setDate(d.getDate()-i);
+    const key = d.toISOString().slice(0,10);
+    const label = d.toLocaleDateString('ko-KR',{month:'numeric',day:'numeric'});
+    assignDays.push({ key, label });
+  }
+
   return (
     <div style={{ flex:1, overflowY:"auto", padding:"20px 24px", height:"calc(100vh - 88px)", boxSizing:"border-box" }}>
       <div style={{ display:"flex", gap:12, flexWrap:"wrap", marginBottom:24 }}>
@@ -173,6 +185,54 @@ function StatsPanel({ leads, today }) {
           {assigneeList.map(([name,count])=>(<BarRow key={name} label={name} count={count} total={acquiredCount||1} color="#a78bfa"/>))}
         </div>
       </div>
+
+      {/* 직원별 일자별 배정 현황 */}
+      <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:18, marginBottom:16 }}>
+        <div style={{ fontSize:13, fontWeight:700, marginBottom:16 }}>👤 직원별 일자별 배정 현황 (최근 7일)</div>
+        {agents.length === 0 ? (
+          <div style={{ fontSize:12, color:"#6e7681" }}>등록된 직원이 없습니다</div>
+        ) : (
+          <div style={{ overflowX:"auto" }}>
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign:"left", padding:"6px 10px", color:"#6e7681", fontWeight:600, borderBottom:"1px solid #21262d", whiteSpace:"nowrap" }}>직원</th>
+                  {assignDays.map(d=>(
+                    <th key={d.key} style={{ textAlign:"center", padding:"6px 10px", color: d.key===today?"#f48c06":"#6e7681", fontWeight: d.key===today?700:400, borderBottom:"1px solid #21262d", whiteSpace:"nowrap" }}>
+                      {d.label}{d.key===today?" ★":""}
+                    </th>
+                  ))}
+                  <th style={{ textAlign:"center", padding:"6px 10px", color:"#e6edf3", fontWeight:700, borderBottom:"1px solid #21262d" }}>합계</th>
+                </tr>
+              </thead>
+              <tbody>
+                {agents.map(agent=>(
+                  <tr key={agent.email}>
+                    <td style={{ padding:"8px 10px", borderBottom:"1px solid #21262d" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        <div style={{ width:18, height:18, borderRadius:"50%", background:getAgentColor(agent.name), display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:700, color:"#fff", flexShrink:0 }}>{agent.name.slice(0,1)}</div>
+                        <span style={{ color:"#e6edf3", whiteSpace:"nowrap" }}>{agent.name}</span>
+                      </div>
+                    </td>
+                    {assignDays.map(d=>{
+                      const cnt = allLeads.filter(l=>l.assigned_agent===agent.name && l.collected_at?.startsWith(d.key)).length;
+                      return (
+                        <td key={d.key} style={{ textAlign:"center", padding:"8px 10px", borderBottom:"1px solid #21262d", color: cnt>0?"#22c55e":"#30363d", fontWeight: cnt>0?700:400 }}>
+                          {cnt > 0 ? cnt : "-"}
+                        </td>
+                      );
+                    })}
+                    <td style={{ textAlign:"center", padding:"8px 10px", borderBottom:"1px solid #21262d", color:"#f48c06", fontWeight:700 }}>
+                      {allLeads.filter(l=>l.assigned_agent===agent.name).length}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:18 }}>
         <div style={{ fontSize:13, fontWeight:700, marginBottom:16 }}>📈 최근 7일 수집 추이</div>
         <div style={{ display:"flex", alignItems:"flex-end", gap:10, height:120 }}>
@@ -549,22 +609,36 @@ function AdminPage({ user, onBack }) {
       const shuffled = [...pool].sort(() => Math.random() - 0.5);
       const totalAvailable = shuffled.length;
 
+      // 각 직원별 할당량 계산 (금성현 5개, 나머지 7개)
+      const quotas = agents.map(a => ({ ...a, quota: a.name === "금성현" ? 5 : 7 }));
+      const totalWanted = quotas.reduce((s, a) => s + a.quota, 0);
+
+      // 매물이 부족하면 1/n 균등 분배
       let totalAssigned = 0;
-      for (const agent of agents) {
-        const chunk = shuffled.splice(0, 7);
-        if (chunk.length === 0) break;
-        for (const lead of chunk) {
-          await sbFetch(`property_leads?id=eq.${lead.id}`, {
-            method: "PATCH",
-            body: JSON.stringify({ assigned_agent: agent.name })
-          }, user.token);
-          totalAssigned++;
+      if (totalAvailable < totalWanted) {
+        const perAgent = Math.floor(totalAvailable / agents.length);
+        const remainder = totalAvailable % agents.length;
+        for (let i = 0; i < quotas.length; i++) {
+          const cnt = perAgent + (i < remainder ? 1 : 0);
+          const chunk = shuffled.splice(0, cnt);
+          for (const lead of chunk) {
+            await sbFetch(`property_leads?id=eq.${lead.id}`, { method:"PATCH", body:JSON.stringify({ assigned_agent: quotas[i].name }) }, user.token);
+            totalAssigned++;
+          }
+          if (!auto) console.log(quotas[i].name + ": " + cnt + "건");
+        }
+      } else {
+        for (const agent of quotas) {
+          const chunk = shuffled.splice(0, agent.quota);
+          for (const lead of chunk) {
+            await sbFetch(`property_leads?id=eq.${lead.id}`, { method:"PATCH", body:JSON.stringify({ assigned_agent: agent.name }) }, user.token);
+            totalAssigned++;
+          }
+          if (!auto) console.log(agent.name + ": " + agent.quota + "건");
         }
       }
-      const perAgent = Math.min(7, Math.floor(totalAvailable / agents.length));
-      const msg = totalAssigned < agents.length * 7
-        ? `✅ 연락처 있는 매물 ${totalAvailable}건 → ${agents.length}명에게 총 ${totalAssigned}건 배정 완료! (1인당 최대 ${perAgent}건)`
-        : `✅ ${agents.length}명에게 당근 연락처 매물 총 ${totalAssigned}건 배정 완료!`;
+
+      const msg = `✅ ${agents.length}명에게 총 ${totalAssigned}건 배정 완료!${totalAvailable < totalWanted ? ` (매물 부족으로 균등 배분)` : ""}`;
       if (!auto) setAssignResult(msg);
       else setAssignResult(`🔄 자동 배정 완료: ${totalAssigned}건`);
     } catch(e) { if (!auto) setAssignResult("오류: " + e.message); }
@@ -780,6 +854,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
   const [lastRefresh, setLastRefresh] = useState(null);
   const [view, setView] = useState("list");
   const [members, setMembers] = useState([]);
+  const [agentView, setAgentView] = useState("all");
 
   useEffect(() => {
     if (user.isAdmin) {
@@ -843,6 +918,10 @@ function Dashboard({ user, onLogout, onAdmin }) {
       if (!keywords.some(k => addr.includes(k))) return false;
     }
     if (phoneFilter === "has" && !l.phone) return false;
+    // 관리자 직원 필터
+    if (user.isAdmin && agentView !== "all") {
+      if (l.assigned_agent !== agentView) return false;
+    }
     if (search) {
       const q = search.toLowerCase();
       const hay = [l.address_jibun,l.address_raw,l.phone,l.title,l.description,l.broker,l.note].join(" ").toLowerCase();
@@ -940,9 +1019,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
         </div>
         <div className="tab-bar">
           <button className={"tab-btn"+(view==="list"?" active":"")} onClick={()=>setView("list")}>📋 매물목록</button>
-          <button className={"tab-btn"+(view==="stats"?" active":"")} onClick={()=>setView("stats")}>📊 통계</button>
-          <button className={"tab-btn"+(view==="briefing"?" active":"")} onClick={()=>setView("briefing")}>📅 브리핑</button>
-          <button className={"tab-btn"+(view==="watermark"?" active":"")} onClick={()=>setView("watermark")}>🧹 워터마크</button>
+          {user.isAdmin && <button className={"tab-btn"+(view==="stats"?" active":"")} onClick={()=>setView("stats")}>📊 통계</button>}
         </div>
       </div>
 
@@ -954,12 +1031,8 @@ function Dashboard({ user, onLogout, onAdmin }) {
         </div>
       )}
 
-      {view === "stats" ? (
-        <StatsPanel leads={leads} today={today} />
-      ) : view === "briefing" ? (
-        <BriefingPanel user={user} leads={leads} />
-      ) : view === "watermark" ? (
-        <WatermarkRemoverPanel />
+      {view === "stats" && user.isAdmin ? (
+        <StatsPanel allLeads={leads} members={members} />
       ) : (
       <div className="main-layout">
         <div className="sidebar">
@@ -1013,6 +1086,24 @@ function Dashboard({ user, onLogout, onAdmin }) {
                   {label}
                 </button>
               ))}
+              <div style={{ margin:"12px 12px 8px", height:1, background:"#21262d" }}/>
+              <div style={{ padding:"0 12px 8px", fontSize:10, color:"#6e7681", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.8px" }}>직원 보기</div>
+              <button onClick={()=>setAgentView("all")} style={{ width:"100%", textAlign:"left", padding:"6px 12px", background:agentView==="all"?"#21262d":"transparent", border:"none", color:agentView==="all"?"#e6edf3":"#8b949e", fontSize:12, cursor:"pointer", display:"flex", justifyContent:"space-between" }}>
+                <span>전체</span>
+                <span style={{ fontSize:10, color:"#6e7681" }}>{leads.length}</span>
+              </button>
+              {members.filter(m=>!ADMIN_EMAILS.includes(m.email)).map(m=>{
+                const cnt = leads.filter(l=>l.assigned_agent===m.name).length;
+                return (
+                  <button key={m.email} onClick={()=>setAgentView(m.name)} style={{ width:"100%", textAlign:"left", padding:"6px 12px", background:agentView===m.name?"#21262d":"transparent", border:"none", color:agentView===m.name?"#e6edf3":"#8b949e", fontSize:12, cursor:"pointer", display:"flex", alignItems:"center", gap:6, justifyContent:"space-between" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                      <div style={{ width:14, height:14, borderRadius:"50%", background:getAgentColor(m.name), flexShrink:0 }}/>
+                      <span>{m.name}</span>
+                    </div>
+                    <span style={{ fontSize:10, color:"#6e7681" }}>{cnt}</span>
+                  </button>
+                );
+              })}
             </>
           )}
         </div>
