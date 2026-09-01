@@ -233,6 +233,53 @@ function StatsPanel({ leads, allLeads, members }) {
         )}
       </div>
 
+      {/* 직원별 일자별 물건확보 현황 */}
+      <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:18, marginBottom:16 }}>
+        <div style={{ fontSize:13, fontWeight:700, marginBottom:16 }}>🔒 직원별 일자별 물건확보 현황 (최근 7일)</div>
+        {agents.length === 0 ? (
+          <div style={{ fontSize:12, color:"#6e7681" }}>등록된 직원이 없습니다</div>
+        ) : (
+          <div style={{ overflowX:"auto" }}>
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign:"left", padding:"6px 10px", color:"#6e7681", fontWeight:600, borderBottom:"1px solid #21262d", whiteSpace:"nowrap" }}>직원</th>
+                  {assignDays.map(d=>(
+                    <th key={d.key} style={{ textAlign:"center", padding:"6px 10px", color: d.key===today?"#f48c06":"#6e7681", fontWeight: d.key===today?700:400, borderBottom:"1px solid #21262d", whiteSpace:"nowrap" }}>
+                      {d.label}{d.key===today?" ★":""}
+                    </th>
+                  ))}
+                  <th style={{ textAlign:"center", padding:"6px 10px", color:"#e6edf3", fontWeight:700, borderBottom:"1px solid #21262d" }}>합계</th>
+                </tr>
+              </thead>
+              <tbody>
+                {agents.map(agent=>(
+                  <tr key={agent.email}>
+                    <td style={{ padding:"8px 10px", borderBottom:"1px solid #21262d" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        <div style={{ width:18, height:18, borderRadius:"50%", background:getAgentColor(agent.name), display:"flex", alignItems:"center", justifyContent:"center", fontSize:9, fontWeight:700, color:"#fff", flexShrink:0 }}>{agent.name.slice(0,1)}</div>
+                        <span style={{ color:"#e6edf3", whiteSpace:"nowrap" }}>{agent.name}</span>
+                      </div>
+                    </td>
+                    {assignDays.map(d=>{
+                      const cnt = allLeads.filter(l=>l.assigned_to===agent.name && l.status==="acquired" && l.collected_at?.startsWith(d.key)).length;
+                      return (
+                        <td key={d.key} style={{ textAlign:"center", padding:"8px 10px", borderBottom:"1px solid #21262d", color: cnt>0?"#a78bfa":"#30363d", fontWeight: cnt>0?700:400 }}>
+                          {cnt > 0 ? cnt : "-"}
+                        </td>
+                      );
+                    })}
+                    <td style={{ textAlign:"center", padding:"8px 10px", borderBottom:"1px solid #21262d", color:"#a78bfa", fontWeight:700 }}>
+                      {allLeads.filter(l=>l.assigned_to===agent.name && l.status==="acquired").length}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       <div style={{ background:"#161b22", border:"1px solid #21262d", borderRadius:10, padding:18 }}>
         <div style={{ fontSize:13, fontWeight:700, marginBottom:16 }}>📈 최근 7일 수집 추이</div>
         <div style={{ display:"flex", alignItems:"flex-end", gap:10, height:120 }}>
