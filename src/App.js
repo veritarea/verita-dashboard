@@ -918,7 +918,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
       if (user.isAdmin) {
         // 관리자: 전체 조회
         const [d1, d2] = await Promise.all([
-          sbFetch("property_leads?select=*&status=in.(new,callback,rejected,duplicate)&order=collected_at.desc&limit=2000", {}, user.token),
+          sbFetch("property_leads?select=*&status=in.(new,callback,rejected,duplicate)&order=collected_at.desc&limit=5000", {}, user.token),
           sbFetch("property_leads?select=*&status=in.(called,acquired)&order=collected_at.desc", {}, user.token),
         ]);
         data = [...(Array.isArray(d1)?d1:[]), ...(Array.isArray(d2)?d2:[])];
