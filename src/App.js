@@ -953,6 +953,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
     ["한림읍", "한림읍"],
     ["아라일동|아라이동", "아라동"],
     ["외도일동|외도이동", "외도동"],
+    ["오라일동|오라이동|오라삼동", "오라동"],
   ];
 
   const filtered = leads.filter(l => {
