@@ -1050,7 +1050,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
       <div className="header-wrap">
         <div className="header-top">
           <div className="header-left">
-            <img src="/logo.png" alt="Verita" style={{ width:32, height:32, objectFit:"contain", flexShrink:0 }} />
+            <div style={{ width:26, height:26, background:"linear-gradient(135deg,#e85d04,#f48c06)", borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700, flexShrink:0 }}>V</div>
             <span className="site-title">Verita</span>
             <span style={{ fontSize:10, color:"#22c55e", background:"#052e16", padding:"2px 6px", borderRadius:10, border:"1px solid #16a34a", whiteSpace:"nowrap" }}>● Live</span>
           </div>
