@@ -955,6 +955,7 @@ function Dashboard({ user, onLogout, onAdmin }) {
     ["외도일동|외도이동", "외도동"],
     ["오라일동|오라이동|오라삼동", "오라동"],
     ["강정동|법환동|동홍동|서호동", "강정·법환·동홍·서호"],
+    ["도평동", "도평동"],
   ];
 
   const filtered = leads.filter(l => {
